@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Music Search</title>
+  
+  <style>
+    body {
+      font-family: RoboConsended, Arial, sans-serif;
+      max-width: 600px;
+      margin: 40px auto;
+      padding: 0 16px;
+      background-color: #f4f4f9;
+    }
+
+    h1 {
+      text-align: center;
+      color: #333;
+    }
+
+    form {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      padding: 12px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+
+    button {
+      padding: 12px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-weight: bold;
+    }
+    
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+
+    #result {
+      margin-top: 20px;
+      padding: 16px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      display: none;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    #result img {
+        max-width: 100%;
+        border-radius: 4px;
+        margin-top: 10px;
+    }
+
+    #error {
+      margin-top: 20px;
+      padding: 12px;
+      background-color: #ffebee;
+      color: #b00020;
+      border-radius: 8px;
+      display: none;
+      border: 1px solid #ef9a9a;
+    }
+  </style>
+</head>
+<body>
+  <h1>Music Search</h1>
+
+  <form id="searchForm">
+    <input
+      type="text"
+      id="query"
+      name="query"
+      placeholder="Type a song name or YouTube URL..."
+      required
+    />
+    <button type="submit" id="playButton">Search</button>
+  </form>
+
+  <div id="error"></div>
+  <div id="result"></div>
+
+  <script>
+    const form = document.getElementById("searchForm");
+    const playButton = document.getElementById("playButton");
+    const queryInput = document.getElementById("query");
+    const resultDiv = document.getElementById("result");
+    const errorDiv = document.getElementById("error");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault(); // Prevent page reload
+
+      const query = queryInput.value.trim();
+      if (!query) return;
+
+      // UI state
+      playButton.disabled = true;
+      playButton.textContent = "Searching...";
+      resultDiv.style.display = "none";
+      errorDiv.style.display = "none";
+
+      try {
+        const response = await fetch("/api/search", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ query }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || "Server error");
+        }
+
+        // Show result
+        resultDiv.innerHTML = `
+          <strong>Found:</strong> ${data.title}<br/>
+          <div style="margin-top: 10px;">
+            <a href="${data.webpage_url}" target="_blank" style="text-decoration:none; color: #007bff;">
+                Click here to Open on YouTube
+            </a>
+          </div>
+          ${data.thumbnail ? `<img src="${data.thumbnail}" alt="Thumbnail">` : ''}
+        `;
+        resultDiv.style.display = "block";
+      } catch (err) {
+        errorDiv.textContent = "Error: " + err.message;
+        errorDiv.style.display = "block";
+      } finally {
+        playButton.disabled = false;
+        playButton.textContent = "Search";
+      }
+    });
+  </script>
+</body>
+</html>

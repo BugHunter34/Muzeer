@@ -1,0 +1,102 @@
+/*____                                 _ _                 
+ |  _ \         _      /\             | | |                
+ | |_) |_   _  (_)    /  \   _ __   __| | |__  _   _ _   _ 
+ |  _ <| | | |       / /\ \ | '_ \ / _` | '_ \| | | | | | |
+ | |_) | |_| |  _   / ____ \| | | | (_| | | | | |_| | |_| |
+ |____/ \__, | (_) /_/    \_\_| |_|\__,_|_| |_|\__, |\__, |
+         __/ |                                  __/ | __/ |
+        |___/                                  |___/ |___/ */
+
+@font-face {
+    font-family: 'RoboConsended'; 
+    src: url('RoboConsended.ttf') format('truetype'); 
+    font-weight: normal; 
+    font-style: normal; 
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    background-color: #cfffff;
+    
+}
+
+.playButton {
+    padding: 10px 20px;
+    font-size: 20px;
+    background-color: #42aef7;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}
+body {
+      font-family: RoboConsended, Arial, sans-serif;
+      max-width: 600px;
+      margin: 40px auto;
+      padding: 0 16px;
+      background-color: #f4f4f9;
+    }
+
+    h1 {
+      text-align: center;
+      color: #333;
+    }
+
+    form {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      padding: 12px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+
+    button {
+      padding: 12px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-weight: bold;
+    }
+    
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+
+    #result {
+      margin-top: 20px;
+      padding: 16px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      display: none;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    #result img {
+        max-width: 100%;
+        border-radius: 4px;
+        margin-top: 10px;
+    }
+
+    #error {
+      margin-top: 20px;
+      padding: 12px;
+      background-color: #ffebee;
+      color: #b00020;
+      border-radius: 8px;
+      display: none;
+      border: 1px solid #ef9a9a;
+    }
