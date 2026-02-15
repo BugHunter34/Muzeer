@@ -14,6 +14,9 @@
   --muted: #a2a3b7;
   --panel: #0f1016;
   --player-offset: 140px;
+  --accent-start: #00ffd2;
+  --accent-end: #ff5ca2;
+  --speaker-glow: #00ffd2;
 }
 
 * {

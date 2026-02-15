@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import './App.css'
 import './index.css'
 // Make sure to install: npm install react-icons
-import { FaPlay, FaPause, FaStepForward, FaStepBackward, FaVolumeUp, FaPlus, FaHeart, FaSearch } from 'react-icons/fa'
+import { FaPlay, FaPause, FaStepForward, FaStepBackward, FaVolumeUp, FaPlus, FaHeart, FaSearch, FaSlidersH } from 'react-icons/fa'
 import { MdQueueMusic } from 'react-icons/md'
 
 // Add this to your CSS or a style tag to force icons to show
@@ -29,6 +29,13 @@ function App() {
   const [featuredSongs, setFeaturedSongs] = useState([]) // Trending
   const [quickPicks, setQuickPicks] = useState([]) // Most Played
   const [loading, setLoading] = useState(false)
+
+  // --- Theme State ---
+  const [themeOpen, setThemeOpen] = useState(false)
+  const [accentStart, setAccentStart] = useState('#00ffd2')
+  const [accentEnd, setAccentEnd] = useState('#ff5ca2')
+  const [speakerGlow, setSpeakerGlow] = useState('#00ffd2')
+  const [intensity, setIntensity] = useState(1)
   
   // --- Playlist & Queue State ---
   const [playlists, setPlaylists] = useState(['Daily Mix 1', 'Chill Focus', 'Pinkwave Essentials']) 
@@ -93,6 +100,7 @@ function App() {
       }
     }
   }, [])
+
 
   // --- LOGIC: LOCAL PLAY COUNT ---
   const recordPlay = (track) => {
@@ -333,17 +341,33 @@ function App() {
     return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`
   }
 
+  const themeVars = {
+    '--accent-start': accentStart,
+    '--accent-end': accentEnd,
+    '--speaker-glow': speakerGlow,
+    '--hz-intensity': intensity,
+  }
+
   return (
-    <div className="app-shell h-screen overflow-hidden text-[color:var(--ink)]">
+    <div className="app-shell h-screen overflow-hidden text-[color:var(--ink)]" style={themeVars}>
       {/* Background Ambience (Pinkwave) */}
       <div
         ref={ambienceRef}
         className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
       >
         <div className={`edge-glow ${isPlaying ? 'is-playing' : 'is-paused'}`} aria-hidden="true" />
-        <div className="absolute -left-32 top-10 h-72 w-72 rounded-full bg-pink-500/30 blur-[120px]" />
-        <div className="absolute right-0 top-1/3 h-72 w-72 rounded-full bg-fuchsia-500/25 blur-[140px]" />
-        <div className="absolute bottom-0 left-1/4 h-80 w-80 rounded-full bg-rose-500/20 blur-[160px]" />
+        <div
+          className="absolute -left-32 top-10 h-72 w-72 rounded-full blur-[120px]"
+          style={{ backgroundColor: accentEnd, opacity: 0.3 }}
+        />
+        <div
+          className="absolute right-0 top-1/3 h-72 w-72 rounded-full blur-[140px]"
+          style={{ backgroundColor: accentStart, opacity: 0.25 }}
+        />
+        <div
+          className="absolute bottom-0 left-1/4 h-80 w-80 rounded-full blur-[160px]"
+          style={{ backgroundColor: speakerGlow, opacity: 0.2 }}
+        />
         <div
           ref={wavesRef}
           className={`hz-waves hz-liquid ${isPlaying ? 'is-playing' : 'is-paused'}`}
@@ -379,12 +403,65 @@ function App() {
                Where Music Lives
              </div>
 
-              {/* Auth Placeholder */}
-              <div>
+              {/* Auth + Theme */}
+              <div className="relative flex items-center gap-3">
                   {user ? (
                       <span className="text-xs text-pink-400">Welcome, {user.name}</span>
                   ) : (
                       <button onClick={handleAuthMock} className="text-xs text-white/60 hover:text-white">Login</button>
+                  )}
+                  <button
+                    onClick={() => setThemeOpen((prev) => !prev)}
+                    className="rounded-full border border-white/10 bg-white/5 p-2 text-white/60 transition hover:text-white"
+                    aria-label="Open theme settings"
+                  >
+                    <FaSlidersH className="text-sm" />
+                  </button>
+                  {themeOpen && (
+                    <div className="absolute right-0 top-full mt-3 w-64 rounded-2xl border border-white/10 bg-[color:var(--panel)]/95 p-4 text-xs shadow-[0_18px_40px_rgba(0,0,0,0.4)] backdrop-blur">
+                      <p className="text-[10px] uppercase tracking-[0.3em] text-white/40">Theme</p>
+                      <div className="mt-3 space-y-3">
+                        <label className="flex items-center justify-between gap-3">
+                          <span className="text-white/70">Gradient start</span>
+                          <input
+                            type="color"
+                            value={accentStart}
+                            onChange={(e) => setAccentStart(e.target.value)}
+                            className="h-7 w-10 cursor-pointer rounded"
+                          />
+                        </label>
+                        <label className="flex items-center justify-between gap-3">
+                          <span className="text-white/70">Gradient end</span>
+                          <input
+                            type="color"
+                            value={accentEnd}
+                            onChange={(e) => setAccentEnd(e.target.value)}
+                            className="h-7 w-10 cursor-pointer rounded"
+                          />
+                        </label>
+                        <label className="flex items-center justify-between gap-3">
+                          <span className="text-white/70">Speaker glow</span>
+                          <input
+                            type="color"
+                            value={speakerGlow}
+                            onChange={(e) => setSpeakerGlow(e.target.value)}
+                            className="h-7 w-10 cursor-pointer rounded"
+                          />
+                        </label>
+                        <label className="flex items-center justify-between gap-3">
+                          <span className="text-white/70">Intensity</span>
+                          <input
+                            type="range"
+                            min="0"
+                            max="2"
+                            step="0.05"
+                            value={intensity}
+                            onChange={(e) => setIntensity(parseFloat(e.target.value))}
+                            className="h-1 w-24 cursor-pointer appearance-none rounded-full bg-white/20 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+                          />
+                        </label>
+                      </div>
+                    </div>
                   )}
               </div>
           </div>
