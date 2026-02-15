@@ -92,6 +92,16 @@ button {
   overflow: hidden;
 }
 
+.custom-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
 .hz-waves {
   position: absolute;
   left: 50%;

@@ -458,7 +458,7 @@ function App() {
         </aside>
 
         {/* --- MIDDLE CONTENT (Search & Feed) --- */}
-        <main className="min-w-0 space-y-6">
+        <main className="min-w-0 space-y-6 overflow-y-auto pr-1 custom-scrollbar max-h-[calc(100vh-220px)]">
           <header className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
             <div>
               <p className="text-xs uppercase tracking-[0.4em] text-[color:var(--muted)]">Now Trending</p>
