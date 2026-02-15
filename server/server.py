@@ -3,6 +3,8 @@ from flask_cors import CORS
 import yt_dlp
 import random
 import requests
+from pymongo import MongoClient
+import bcrypt
 from urllib.parse import quote
 
 app = Flask(__name__)
@@ -14,6 +16,10 @@ YDL_OPTS = {
     "noplaylist": True,
     "default_search": "ytsearch",
 }
+
+client = MongoClient("mongodb+srv://admin:admin@hudba.lrwxpfn.mongodb.net/mydatabase?retryWrites=true&w=majority&appName=Hudba")
+db = client["mydatabase"]
+users = db["users"]
 
 def build_proxy_url(audio_url):
     if not audio_url:
@@ -113,6 +119,14 @@ def api_trending():
     except Exception as e:
         print(f"Trending Error: {e}")
         return jsonify([])
+    
+@app.route("/register", methods=["POST"])
+def register():
+    data = request.json
+    email = data.get("email")
+    password = data.get("password")
+    if users.find_one({"email": email}):
+        return jsonify({"error": "User already exists"}), 400
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=3000, debug=True)
