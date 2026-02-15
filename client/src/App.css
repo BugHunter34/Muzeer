@@ -145,12 +145,13 @@ button {
   position: absolute;
   inset: 6%;
   border-radius: 50%;
-  background: radial-gradient(circle at 50% 45%, rgba(14, 14, 22, 0.4), rgba(4, 4, 8, 0.96));
+  background: radial-gradient(circle at 50% 45%, rgba(20, 20, 30, 0.7), rgba(8, 8, 12, 0.98));
   box-shadow:
-    0 50px 140px rgba(0, 0, 0, 0.9),
-    0 0 80px color-mix(in srgb, var(--speaker-glow) 35%, transparent),
-    inset 0 0 110px rgba(0, 0, 0, 0.7),
-    inset 0 0 50px color-mix(in srgb, var(--speaker-glow) 20%, transparent);
+    0 50px 140px rgba(0, 0, 0, 0.95),
+    0 0 100px color-mix(in srgb, var(--speaker-glow) 55%, transparent),
+    0 0 40px color-mix(in srgb, var(--speaker-glow) 35%, transparent),
+    inset 0 0 90px rgba(0, 0, 0, 0.6),
+    inset 0 0 60px color-mix(in srgb, var(--speaker-glow) 30%, transparent);
   transform: translateY(18px) scale(calc(0.85 + (var(--hz-power, 0) * 0.24)));
 }
 
@@ -178,16 +179,18 @@ button {
   position: absolute;
   inset: 2%;
   border-radius: 50%;
-  border: 3px solid color-mix(in srgb, var(--accent-end) 70%, transparent);
-  box-shadow: 0 0 28px color-mix(in srgb, var(--accent-end) 60%, transparent);
+  border: 3px solid color-mix(in srgb, var(--accent-end) 85%, transparent);
+  box-shadow: 0 0 35px color-mix(in srgb, var(--accent-end) 75%, transparent),
+              inset 0 0 20px color-mix(in srgb, var(--accent-end) 40%, transparent);
 }
 
 .speaker__cone {
   position: absolute;
   inset: 12%;
   border-radius: 50%;
-  background: radial-gradient(circle at 45% 40%, color-mix(in srgb, var(--speaker-glow) 45%, transparent), rgba(6, 6, 12, 0.9));
-  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.6);
+  background: radial-gradient(circle at 45% 40%, color-mix(in srgb, var(--speaker-glow) 60%, rgba(10, 10, 16, 0.3)), rgba(10, 10, 18, 0.95));
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.5),
+              0 0 25px color-mix(in srgb, var(--speaker-glow) 35%, transparent);
   transform: scale(calc(0.92 + (var(--hz-power, 0) * 0.28)));
 }
 
@@ -195,17 +198,18 @@ button {
   position: absolute;
   inset: 36%;
   border-radius: 50%;
-  background: radial-gradient(circle at 40% 40%, rgba(190, 190, 190, 0.15), rgba(12, 12, 20, 0.95));
-  box-shadow: 0 0 24px color-mix(in srgb, var(--speaker-glow) 45%, transparent);
+  background: radial-gradient(circle at 40% 40%, rgba(220, 220, 220, 0.25), rgba(15, 15, 25, 0.98));
+  box-shadow: 0 0 30px color-mix(in srgb, var(--speaker-glow) 60%, transparent),
+              inset 0 0 15px rgba(255, 255, 255, 0.08);
   transform: scale(calc(0.95 + (var(--hz-power, 0) * 0.35)));
 }
 
 .speaker__ring {
   position: absolute;
   border-radius: 50%;
-  border: 1px solid color-mix(in srgb, var(--speaker-glow) 45%, transparent);
-  opacity: calc(0.3 + (var(--hz-power, 0) * 0.5));
-  box-shadow: 0 0 18px color-mix(in srgb, var(--speaker-glow) 40%, transparent);
+  border: 2px solid color-mix(in srgb, var(--speaker-glow) 65%, transparent);
+  opacity: calc(0.4 + (var(--hz-power, 0) * 0.55));
+  box-shadow: 0 0 22px color-mix(in srgb, var(--speaker-glow) 55%, transparent);
 }
 
 .speaker__ring--outer {
