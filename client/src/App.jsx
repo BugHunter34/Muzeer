@@ -32,9 +32,9 @@ function App() {
 
   // --- Theme State ---
   const [themeOpen, setThemeOpen] = useState(false)
-  const [accentStart, setAccentStart] = useState('#00ffd2')
-  const [accentEnd, setAccentEnd] = useState('#ff5ca2')
-  const [speakerGlow, setSpeakerGlow] = useState('#00ffd2')
+  const [accentStart, setAccentStart] = useState('#3bf0d1')
+  const [accentEnd, setAccentEnd] = useState('#ffb454')
+  const [speakerGlow, setSpeakerGlow] = useState('#3bf0d1')
   const [intensity, setIntensity] = useState(1)
   
   // --- Playlist & Queue State ---
@@ -249,6 +249,8 @@ function App() {
         recordPlay(track)
     }
 
+    applyThemeFromImage(track.thumbnail, track)
+
     setCurrentTrack(track)
     audioRef.current.src = streamUrl
     audioRef.current.play().catch(e => console.log("Playback error:", e))
@@ -341,11 +343,146 @@ function App() {
     return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`
   }
 
+  const themePalettes = [
+    ['#3bf0d1', '#ffb454', '#3bf0d1'],
+    ['#8ef3ff', '#ffe08a', '#7be1ff'],
+    ['#9dffe5', '#ff9b6b', '#63f7c6'],
+    ['#b8a1ff', '#ffd6a6', '#9c9bff'],
+    ['#6de2ff', '#ff6f91', '#6de2ff'],
+    ['#c1ff78', '#ffa76a', '#c1ff78'],
+  ]
+
+  const clampChannel = (value, min = 25, max = 235) => Math.min(max, Math.max(min, value))
+
+  const rgbToHsl = (r, g, b) => {
+    const rNorm = r / 255
+    const gNorm = g / 255
+    const bNorm = b / 255
+    const max = Math.max(rNorm, gNorm, bNorm)
+    const min = Math.min(rNorm, gNorm, bNorm)
+    let h = 0
+    let s = 0
+    const l = (max + min) / 2
+
+    if (max !== min) {
+      const delta = max - min
+      s = l > 0.5 ? delta / (2 - max - min) : delta / (max + min)
+      switch (max) {
+        case rNorm:
+          h = (gNorm - bNorm) / delta + (gNorm < bNorm ? 6 : 0)
+          break
+        case gNorm:
+          h = (bNorm - rNorm) / delta + 2
+          break
+        default:
+          h = (rNorm - gNorm) / delta + 4
+          break
+      }
+      h /= 6
+    }
+
+    return { h, s, l }
+  }
+
+  const toHex = (value) => clampChannel(Math.round(value)).toString(16).padStart(2, '0')
+  const rgbToHex = (r, g, b) => `#${toHex(r)}${toHex(g)}${toHex(b)}`
+
+  const hashString = (value) => {
+    let hash = 0
+    for (let i = 0; i < value.length; i += 1) {
+      hash = (hash << 5) - hash + value.charCodeAt(i)
+      hash |= 0
+    }
+    return Math.abs(hash)
+  }
+
+  const applyPalette = (palette) => {
+    setAccentStart(palette[0])
+    setAccentEnd(palette[1])
+    setSpeakerGlow(palette[2])
+  }
+
+  const applyFallbackTheme = (track) => {
+    const seed = `${track?.title || ''}${track?.artist || ''}${track?.webpage_url || ''}`
+    const index = seed ? hashString(seed) % themePalettes.length : 0
+    applyPalette(themePalettes[index])
+  }
+
+  const applyThemeFromImage = (imageUrl, track) => {
+    if (!imageUrl) {
+      applyFallbackTheme(track)
+      return
+    }
+
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.src = imageUrl
+
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      const context = canvas.getContext('2d')
+      if (!context) {
+        applyFallbackTheme(track)
+        return
+      }
+
+      const size = 48
+      canvas.width = size
+      canvas.height = size
+      context.drawImage(img, 0, 0, size, size)
+
+      let avgR = 0
+      let avgG = 0
+      let avgB = 0
+      let count = 0
+      let best = { r: 0, g: 0, b: 0, score: 0 }
+
+      try {
+        const data = context.getImageData(0, 0, size, size).data
+        for (let i = 0; i < data.length; i += 4) {
+          const alpha = data[i + 3]
+          if (alpha < 10) continue
+          const r = data[i]
+          const g = data[i + 1]
+          const b = data[i + 2]
+          const { s, l } = rgbToHsl(r, g, b)
+          const score = s * 0.7 + l * 0.3
+
+          avgR += r
+          avgG += g
+          avgB += b
+          count += 1
+
+          if (score > best.score) {
+            best = { r, g, b, score }
+          }
+        }
+      } catch (err) {
+        applyFallbackTheme(track)
+        return
+      }
+
+      if (!count) {
+        applyFallbackTheme(track)
+        return
+      }
+
+      const avgColor = rgbToHex(avgR / count, avgG / count, avgB / count)
+      const vibrant = rgbToHex(best.r, best.g, best.b)
+      applyPalette([avgColor, vibrant, vibrant])
+    }
+
+    img.onerror = () => {
+      applyFallbackTheme(track)
+    }
+  }
+
   const themeVars = {
     '--accent-start': accentStart,
     '--accent-end': accentEnd,
     '--speaker-glow': speakerGlow,
     '--hz-intensity': intensity,
+    '--bg-intensity': intensity,
   }
 
   return (
@@ -355,6 +492,7 @@ function App() {
         ref={ambienceRef}
         className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
       >
+        <div className="liquid-flow" aria-hidden="true" />
         <div className={`edge-glow ${isPlaying ? 'is-playing' : 'is-paused'}`} aria-hidden="true" />
         <div
           className="absolute -left-32 top-10 h-72 w-72 rounded-full blur-[120px]"
@@ -387,26 +525,26 @@ function App() {
 
       <div className="app-content">
         {/* --- NAVBAR --- */}
-        <nav className="sticky top-0 z-50 mx-auto w-full max-w-[1600px] rounded-b-3xl border-b border-white/10 bg-[color:var(--panel)]/95 backdrop-blur-md">
+        <nav className="nav-shell sticky top-0 z-50 mx-auto w-full max-w-[1600px] rounded-b-3xl border-b border-white/10 bg-[color:var(--panel)]/95 backdrop-blur-md">
           <div className="flex items-center justify-between px-4 py-4 sm:px-5">
              {/* Logo Section */}
              <div className="flex items-center gap-3">
                 {/* Replace with <img src="/logo.png" /> if you have it */}
-                <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center font-bold text-black">M</div>
-                <span className="font-bold tracking-wide text-lg bg-clip-text text-transparent bg-gradient-to-r from-pink-500 to-white">
+                <div className="brand-mark h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-300 to-amber-400 flex items-center justify-center font-bold text-black">M</div>
+                <span className="brand-title font-bold tracking-wide text-lg bg-clip-text text-transparent bg-gradient-to-r from-emerald-300 to-amber-200">
                   {appName}
                 </span>
              </div>
              
              {/* Center Text */}
-             <div className="hidden md:block text-xs font-medium tracking-[0.3em] uppercase text-white/50">
+             <div className="brand-slogan hidden md:block text-xs font-medium tracking-[0.3em] uppercase text-white/50">
                Where Music Lives
              </div>
 
               {/* Auth + Theme */}
               <div className="relative flex items-center gap-3">
                   {user ? (
-                      <span className="text-xs text-pink-400">Welcome, {user.name}</span>
+                      <span className="text-xs text-emerald-300">Welcome, {user.name}</span>
                   ) : (
                       <button onClick={handleAuthMock} className="text-xs text-white/60 hover:text-white">Login</button>
                   )}

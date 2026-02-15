@@ -1,8 +1,8 @@
 @import "tailwindcss";
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap");
 
 :root {
-  font-family: "Manrope", "Segoe UI", sans-serif;
+  font-family: "Space Grotesk", "Segoe UI", sans-serif;
   line-height: 1.5;
   font-weight: 400;
   font-synthesis: none;
@@ -10,13 +10,15 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  --ink: #f8f8fb;
-  --muted: #a2a3b7;
-  --panel: #0f1016;
+  --ink: #f6f7fb;
+  --muted: #9aa7b8;
+  --panel: #0b0f14;
   --player-offset: 140px;
-  --accent-start: #00ffd2;
-  --accent-end: #ff5ca2;
-  --speaker-glow: #00ffd2;
+  --accent-start: #3bf0d1;
+  --accent-end: #ffb454;
+  --speaker-glow: #3bf0d1;
+  --grid-line: rgba(62, 214, 200, 0.12);
+  --grid-line-strong: rgba(255, 196, 110, 0.16);
 }
 
 * {
@@ -33,9 +35,11 @@ body,
 body {
   margin: 0;
   min-height: 100vh;
-  background: radial-gradient(circle at top left, #2a0f1b, transparent 45%),
-    radial-gradient(circle at 30% 20%, #301229, transparent 45%),
-    #0a0b10;
+  background:
+    radial-gradient(circle at 8% 18%, rgba(48, 214, 197, 0.18), transparent 42%),
+    radial-gradient(circle at 78% 15%, rgba(255, 180, 84, 0.16), transparent 46%),
+    radial-gradient(circle at 55% 85%, rgba(22, 67, 87, 0.35), transparent 55%),
+    #06080c;
   color: var(--ink);
 }
 
