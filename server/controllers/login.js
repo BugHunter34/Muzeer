@@ -12,10 +12,10 @@ exports.login = async (req, res) => {
       return res.status(401).send({ message: "Špatné přihlašovací údaje" });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(401).send({ message: "Špatné přihlašovací údaje" });
-    }
+ const isMatch = await bcrypt.compare(password, user.passwordHash);
+  if (!isMatch) {
+     return res.status(401).send({ message: "Špatné přihlašovací údaje" });
+}
 
     const token = jwt.sign(
       { id: user._id, role: user.role },

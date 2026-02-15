@@ -122,11 +122,26 @@ def api_trending():
     
 @app.route("/register", methods=["POST"])
 def register():
-    data = request.json
-    email = data.get("email")
-    password = data.get("password")
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").lower().strip()
+    password = data.get("password") or ""
+    user_name = (data.get("userName") or "").strip()
+    if not email or not password:
+        return jsonify({"error": "Missing email or password"}), 400
+
     if users.find_one({"email": email}):
         return jsonify({"error": "User already exists"}), 400
+
+    
+    password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    users.insert_one({
+        "email": email,
+        "userName": user_name,
+        "passwordHash": password_hash,
+        "role": "user",
+    })
+
+    return jsonify({"ok": True}), 201
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=3000, debug=True)

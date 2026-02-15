@@ -13,10 +13,7 @@ const loginSchema = new mongoose.Schema({
     required: true, 
     trim: true 
   },
-    passwordHash: { 
-    type: String, 
-    required: true 
-  },
+   passwordHash: { type: String, required: true },
   role: { 
     type: String, 
     enum: ["user", "admin"], 
