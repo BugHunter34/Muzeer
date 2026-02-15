@@ -334,7 +334,7 @@ function App() {
   }
 
   return (
-    <div className="app-shell min-h-screen overflow-x-hidden pb-36 text-[color:var(--ink)] sm:pb-28">
+    <div className="app-shell h-screen overflow-hidden text-[color:var(--ink)]">
       {/* Background Ambience (Pinkwave) */}
       <div
         ref={ambienceRef}
@@ -363,8 +363,8 @@ function App() {
 
       <div className="app-content">
         {/* --- NAVBAR --- */}
-        <nav className="sticky top-0 z-50 w-full border-b border-white/10 bg-[color:var(--panel)]/95 backdrop-blur-md">
-          <div className="mx-auto flex max-w-[1600px] items-center justify-between px-4 py-4 sm:px-5">
+        <nav className="sticky top-0 z-50 mx-auto w-full max-w-[1600px] rounded-b-3xl border-b border-white/10 bg-[color:var(--panel)]/95 backdrop-blur-md">
+          <div className="flex items-center justify-between px-4 py-4 sm:px-5">
              {/* Logo Section */}
              <div className="flex items-center gap-3">
                 {/* Replace with <img src="/logo.png" /> if you have it */}
@@ -394,7 +394,7 @@ function App() {
         <div className="mx-auto grid w-full max-w-[1600px] grid-cols-1 gap-6 px-4 pt-6 sm:px-5 lg:grid-cols-[260px_1fr_340px] lg:pt-8">
         
         {/* --- LEFT SIDEBAR (Nav & Auth) --- */}
-        <aside className="hidden flex-col gap-6 lg:flex">
+        <aside className="hidden flex-col gap-6 lg:flex max-h-[calc(100vh-220px)]">
             <div className="rounded-3xl border border-white/10 bg-[color:var(--panel)]/80 p-5 backdrop-blur h-full flex flex-col">
                 <div className="flex flex-col items-center gap-3 mb-6">
                     {/* Logo Image Placeholder */}
@@ -590,7 +590,7 @@ function App() {
         </main>
 
         {/* --- RIGHT SIDEBAR (Queue & Friends) --- */}
-        <aside className="hidden space-y-6 xl:flex xl:flex-col h-[calc(100vh-140px)] sticky top-24">
+        <aside className="hidden space-y-6 xl:flex xl:flex-col h-[calc(100vh-220px)] sticky top-24">
           
           {/* Friends Widget */}
           <div className="rounded-3xl border border-white/10 bg-[color:var(--panel)]/80 p-5 shrink-0">
@@ -655,8 +655,9 @@ function App() {
       </div>
 
       {/* --- BOTTOM PLAYER --- */}
-      <div className="fixed bottom-0 left-0 right-0 border-t border-white/10 bg-[color:var(--panel)]/95 px-4 py-3 backdrop-blur z-[100] sm:px-6">
-        <div className="mx-auto flex max-w-[1600px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      <div className="fixed bottom-0 left-0 right-0 z-[100] px-4 pb-3 sm:px-5 sm:pb-4">
+        <div className="mx-auto max-w-[1600px] rounded-3xl border border-white/10 bg-[color:var(--panel)]/95 px-4 py-3 backdrop-blur sm:px-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           
           {/* Track Info */}
           <div className="flex items-center gap-4 w-full sm:w-1/4 sm:min-w-[200px]">
@@ -743,6 +744,7 @@ function App() {
                 }}
                 className="w-24 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
             />
+          </div>
           </div>
         </div>
       </div>

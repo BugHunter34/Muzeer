@@ -13,10 +13,18 @@
   --ink: #f8f8fb;
   --muted: #a2a3b7;
   --panel: #0f1016;
+  --player-offset: 140px;
 }
 
 * {
   box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
