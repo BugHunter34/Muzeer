@@ -25,7 +25,8 @@ function App() {
 
   // --- Data State ---
   const [query, setQuery] = useState('')
-  const [searchResult, setSearchResult] = useState(null)
+  const [searchResults, setSearchResults] = useState([])
+  const [isSearchResultsOpen, setIsSearchResultsOpen] = useState(false)
   const [featuredSongs, setFeaturedSongs] = useState([]) // Trending
   const [quickPicks, setQuickPicks] = useState([]) // Most Played
   const [loading, setLoading] = useState(false)
@@ -253,9 +254,17 @@ function App() {
 
     setCurrentTrack(track)
     audioRef.current.src = streamUrl
-    audioRef.current.play().catch(e => console.log("Playback error:", e))
-    setIsPlaying(true)
-    startVisualizer()
+    try {
+      await audioRef.current.play()
+      setIsPlaying(true)
+      startVisualizer()
+      return true
+    } catch (e) {
+      console.log("Playback error:", e)
+      setIsPlaying(false)
+      stopVisualizer()
+      return false
+    }
   }
 
   const addToQueue = (track) => {
@@ -279,6 +288,74 @@ function App() {
       setUser({ name: 'User' }); 
     }
   }, []);
+
+  useEffect(() => {
+    if (!audioRef.current) return
+    audioRef.current.volume = volume
+  }, [volume])
+
+  useEffect(() => {
+    const pendingTrackRaw = localStorage.getItem('pendingTrack')
+    if (!pendingTrackRaw) return
+
+    let retryHandlersAttached = false
+    let retryTrack = null
+    let clearPendingTimeout = null
+
+    const schedulePendingClear = () => {
+      if (clearPendingTimeout) {
+        clearTimeout(clearPendingTimeout)
+      }
+      clearPendingTimeout = setTimeout(() => {
+        localStorage.removeItem('pendingTrack')
+      }, 1500)
+    }
+
+    const clearRetryHandlers = () => {
+      if (!retryHandlersAttached) return
+      window.removeEventListener('pointerdown', retryPlayback)
+      window.removeEventListener('keydown', retryPlayback)
+      retryHandlersAttached = false
+    }
+
+    const retryPlayback = async () => {
+      if (!retryTrack) return
+      const played = await playTrack(retryTrack)
+      if (played) {
+        schedulePendingClear()
+        clearRetryHandlers()
+      }
+    }
+
+    try {
+      const pendingTrack = JSON.parse(pendingTrackRaw)
+      if (pendingTrack) {
+        retryTrack = pendingTrack
+        playTrack(pendingTrack).then((played) => {
+          if (played) {
+            schedulePendingClear()
+            return
+          }
+          if (!retryHandlersAttached) {
+            window.addEventListener('pointerdown', retryPlayback)
+            window.addEventListener('keydown', retryPlayback)
+            retryHandlersAttached = true
+          }
+        })
+      } else {
+        localStorage.removeItem('pendingTrack')
+      }
+    } catch {
+      localStorage.removeItem('pendingTrack')
+    }
+
+    return () => {
+      if (clearPendingTimeout) {
+        clearTimeout(clearPendingTimeout)
+      }
+      clearRetryHandlers()
+    }
+  }, [])
 
   const handleAuthMock = () => {
     if (user) {
@@ -327,9 +404,10 @@ function App() {
   // --- LOGIC: SEARCH ---
   const handleSearch = async (e) => {
     e.preventDefault()
-    if (!query) return
+    if (!query.trim()) return
     setLoading(true)
-    setSearchResult(null)
+    setSearchResults([])
+    setIsSearchResultsOpen(true)
     try {
       const response = await fetch('http://localhost:3000/api/search', {
         method: 'POST',
@@ -338,8 +416,20 @@ function App() {
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error)
-      setSearchResult(data)
-    } catch (err) { console.error(err) } 
+      const normalizedResults = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.results)
+          ? data.results
+          : Array.isArray(data?.items)
+            ? data.items
+            : Array.isArray(data?.tracks)
+              ? data.tracks
+              : (data?.title || data?.webpage_url || data?.audio_url || data?.proxy_url)
+                ? [data]
+                : []
+      setSearchResults(normalizedResults)
+      setIsSearchResultsOpen(normalizedResults.length > 0)
+    } catch (err) { console.error(err) }
     finally { setLoading(false) }
   }
 
@@ -658,6 +748,16 @@ function App() {
                     {['Home', 'Search', 'Your Library', 'Create Playlist'].map((item) => (
                     <button
                         key={item}
+                        onClick={() => {
+                          if (item === 'Home') navigate('/')
+                          if (item === 'Search') {
+                            const searchInput = document.getElementById('landing-search-input')
+                            if (searchInput) {
+                              searchInput.focus()
+                              searchInput.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                            }
+                          }
+                        }}
                         className="flex w-full items-center justify-between rounded-xl border border-transparent px-3 py-2 text-left transition hover:border-white/10 hover:bg-white/5 group"
                     >
                         <span>{item}</span>
@@ -693,6 +793,7 @@ function App() {
             <form onSubmit={handleSearch} className="flex w-full items-center gap-3 relative group sm:w-auto">
                 <FaSearch className="absolute left-4 text-white/30 group-focus-within:text-pink-500" />
                 <input
+                  id="landing-search-input"
                   type="text"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
@@ -702,36 +803,56 @@ function App() {
             </form>
           </header>
 
-          {/* Search Result */}
-          {searchResult && (
+          {/* Search Results */}
+          {searchResults.length > 0 && (
             <section className="rounded-3xl border border-pink-500/20 bg-gradient-to-br from-pink-500/10 via-purple-900/10 to-transparent p-5 sm:p-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="flex flex-col gap-6 md:flex-row md:items-center">
-                    {searchResult.thumbnail ? (
-                        <img src={searchResult.thumbnail} alt="Thumbnail" className="h-40 w-40 rounded-3xl object-cover shadow-[0_10px_40px_rgba(236,72,153,0.3)]" />
-                    ) : (
-                        <div className="h-40 w-40 rounded-3xl bg-gradient-to-br from-pink-500 to-rose-500" />
-                    )}
-                    <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                             <span className="px-2 py-1 rounded bg-pink-500/20 text-pink-300 text-[10px] font-bold uppercase tracking-wider">Top Result</span>
-                        </div>
-                        <h2 className="text-2xl font-bold">{searchResult.title}</h2>
-                        <p className="text-white/60 text-sm mt-1 mb-4">{searchResult.artist}</p>
-                        
-                        <div className="flex gap-3">
-                            <button 
-                                onClick={() => playTrack(searchResult)}
-                                className="flex items-center gap-2 rounded-full bg-[#00ff00] px-6 py-2.5 text-sm font-bold text-black transition hover:scale-105 hover:bg-[#00cc00]">
-                                <FaPlay /> Play Now
-                            </button>
-                            <button 
-                                onClick={() => addToQueue(searchResult)}
-                                className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-white/10">
-                                <MdQueueMusic /> Queue
-                            </button>
-                        </div>
-                    </div>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-xl font-semibold">Search results</h2>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-pink-300">{searchResults.length} found</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsSearchResultsOpen((prev) => !prev)}
+                    className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80 transition hover:bg-white/10"
+                  >
+                    {isSearchResultsOpen ? 'Hide' : 'Show'}
+                  </button>
                 </div>
+              </div>
+
+              {isSearchResultsOpen && (
+                <div className="grid gap-4">
+                  {searchResults.map((result, index) => (
+                    <div key={`${result.webpage_url || result.title || 'result'}-${index}`} className="min-w-0 flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 md:flex-row md:items-center">
+                      {result.thumbnail ? (
+                        <img src={result.thumbnail} alt="Thumbnail" className="h-24 w-24 shrink-0 rounded-2xl object-cover shadow-[0_10px_30px_rgba(236,72,153,0.25)]" />
+                      ) : (
+                        <div className="h-24 w-24 shrink-0 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500" />
+                      )}
+
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-lg font-semibold">{result.title || 'Unknown title'}</p>
+                        <p className="mt-1 truncate text-sm text-white/60">{result.artist || 'Unknown artist'}</p>
+                      </div>
+
+                      <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+                        <button
+                          onClick={() => playTrack(result)}
+                          className="flex w-full items-center justify-center gap-2 rounded-full bg-[#00ff00] px-5 py-2 text-sm font-bold text-black transition hover:scale-105 hover:bg-[#00cc00] sm:w-auto"
+                        >
+                          <FaPlay /> Play
+                        </button>
+                        <button
+                          onClick={() => addToQueue(result)}
+                          className="flex w-full items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10 sm:w-auto"
+                        >
+                          <MdQueueMusic /> Queue
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </section>
           )}
 
@@ -963,9 +1084,8 @@ function App() {
                 step="0.05" 
                 value={volume} 
                 onChange={(e) => {
-                    const val = parseFloat(e.target.value)
-                    setVolume(val)
-                    audioRef.current.volume = val
+                const val = parseFloat(e.target.value)
+                setVolume(val)
                 }}
                 className="w-24 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
             />

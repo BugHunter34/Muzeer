@@ -33,20 +33,32 @@ def api_search():
     query = data.get("query")
     if not query: return jsonify({"error": "Missing query"}), 400
 
+    def to_track_payload(info, fallback_query):
+        return {
+            "title": info.get("title", fallback_query),
+            "artist": info.get("uploader", "Unknown Artist"),
+            "webpage_url": info.get("webpage_url", ""),
+            "thumbnail": info.get("thumbnail", ""),
+            "audio_url": info.get("url", ""),
+            "proxy_url": build_proxy_url(info.get("url", "")),
+            "duration": info.get("duration", 0)
+        }
+
     try:
         with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
-            info = ydl.extract_info(query, download=False)
-            if "entries" in info: info = info["entries"][0]
+            normalized_query = str(query).strip()
+            is_direct_url = normalized_query.startswith("http://") or normalized_query.startswith("https://")
 
-            return jsonify({
-                "title": info.get("title", query),
-                "artist": info.get("uploader", "Unknown Artist"),
-                "webpage_url": info.get("webpage_url", ""),
-                "thumbnail": info.get("thumbnail", ""),
-                "audio_url": info.get("url", ""),
-                "proxy_url": build_proxy_url(info.get("url", "")),
-                "duration": info.get("duration", 0)
-            })
+            if is_direct_url:
+                info = ydl.extract_info(normalized_query, download=False)
+                if "entries" in info:
+                    info = info["entries"][0]
+                return jsonify(to_track_payload(info, normalized_query))
+
+            search_info = ydl.extract_info(f"ytsearch10:{normalized_query}", download=False)
+            entries = (search_info or {}).get("entries") or []
+            results = [to_track_payload(entry, normalized_query) for entry in entries if entry]
+            return jsonify(results)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
