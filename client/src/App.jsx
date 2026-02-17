@@ -302,6 +302,14 @@ function App() {
     }
   };
 
+  const handleProfileMock = () => {
+    if (user) {
+      navigate('/profile');
+    } else {
+      navigate('/login');
+    }
+  };
+
   const handleLogOutMock = () => {
     if (user) {
       // Log out logic
@@ -544,7 +552,9 @@ function App() {
               {/* Auth + Theme */}
               <div className="relative flex items-center gap-3">
                   {user ? (
-                      <span className="text-xs text-emerald-300">Welcome, {user.name}</span>
+                      <button onClick={handleProfileMock} className="text-xs text-emerald-300 hover:text-emerald-200">
+                      Welcome, {user.name}
+                      </button>
                   ) : (
                       <button onClick={handleAuthMock} className="text-xs text-white/60 hover:text-white">Login</button>
                   )}
@@ -629,7 +639,7 @@ function App() {
                             <div className="mx-auto h-10 w-10 rounded-full bg-pink-500 flex items-center justify-center font-bold text-black mb-2">
                                 {user.name[0]}
                             </div>
-                            <p className="text-sm font-semibold">My Account</p>
+                            <button onClick={handleProfileMock} className="text-sm font-semibold hover:text-pink-200">My Account</button>
                             <button onClick={handleLogOutMock} className="text-xs text-pink-400 hover:text-pink-300 mt-1">Log Out</button>
                         </div>
                     ) : (
