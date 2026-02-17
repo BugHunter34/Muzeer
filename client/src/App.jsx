@@ -298,7 +298,7 @@ function App() {
       localStorage.removeItem('token'); // Clear the token on logout
     } else {
       // 3. Redirect to the login page instead of the alert
-      navigate('/Register');
+      navigate('/register');
     }
   };
 
