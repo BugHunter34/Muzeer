@@ -26,6 +26,9 @@ function App() {
   // --- Data State ---
   const [query, setQuery] = useState('')
   const [searchResults, setSearchResults] = useState([])
+  const [visibleSearchCount, setVisibleSearchCount] = useState(0)
+  const [searchProgress, setSearchProgress] = useState(0)
+  const [searchProgressTarget, setSearchProgressTarget] = useState(0)
   const [isSearchResultsOpen, setIsSearchResultsOpen] = useState(false)
   const [featuredSongs, setFeaturedSongs] = useState([]) // Trending
   const [quickPicks, setQuickPicks] = useState([]) // Most Played
@@ -52,6 +55,10 @@ function App() {
   const dataArrayRef = useRef(null)
   const sourceNodeRef = useRef(null)
   const rafRef = useRef(null)
+  const searchRevealTimerRef = useRef(null)
+  const searchFetchProgressTimerRef = useRef(null)
+  const searchFinalizeProgressTimerRef = useRef(null)
+  const searchSmoothProgressTimerRef = useRef(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [volume, setVolume] = useState(0.5) 
   const [currentTime, setCurrentTime] = useState(0)
@@ -91,6 +98,18 @@ function App() {
     audio.volume = volume
 
     return () => {
+      if (searchRevealTimerRef.current) {
+        clearInterval(searchRevealTimerRef.current)
+      }
+      if (searchFetchProgressTimerRef.current) {
+        clearInterval(searchFetchProgressTimerRef.current)
+      }
+      if (searchFinalizeProgressTimerRef.current) {
+        clearInterval(searchFinalizeProgressTimerRef.current)
+      }
+      if (searchSmoothProgressTimerRef.current) {
+        clearInterval(searchSmoothProgressTimerRef.current)
+      }
       audio.removeEventListener('timeupdate', updateTime)
       audio.removeEventListener('loadedmetadata', updateDuration)
       audio.removeEventListener('ended', onEnded)
@@ -295,6 +314,35 @@ function App() {
   }, [volume])
 
   useEffect(() => {
+    if (searchSmoothProgressTimerRef.current) {
+      clearInterval(searchSmoothProgressTimerRef.current)
+      searchSmoothProgressTimerRef.current = null
+    }
+
+    searchSmoothProgressTimerRef.current = setInterval(() => {
+      setSearchProgress((prev) => {
+        const diff = searchProgressTarget - prev
+        if (Math.abs(diff) < 0.35) {
+          if (searchSmoothProgressTimerRef.current) {
+            clearInterval(searchSmoothProgressTimerRef.current)
+            searchSmoothProgressTimerRef.current = null
+          }
+          return searchProgressTarget
+        }
+        const step = Math.max(0.35, Math.abs(diff) * 0.16)
+        return prev + Math.sign(diff) * step
+      })
+    }, 16)
+
+    return () => {
+      if (searchSmoothProgressTimerRef.current) {
+        clearInterval(searchSmoothProgressTimerRef.current)
+        searchSmoothProgressTimerRef.current = null
+      }
+    }
+  }, [searchProgressTarget])
+
+  useEffect(() => {
     const pendingTrackRaw = localStorage.getItem('pendingTrack')
     if (!pendingTrackRaw) return
 
@@ -407,7 +455,30 @@ function App() {
     if (!query.trim()) return
     setLoading(true)
     setSearchResults([])
+    setVisibleSearchCount(0)
+    setSearchProgress(0)
+    setSearchProgressTarget(0)
     setIsSearchResultsOpen(true)
+    if (searchRevealTimerRef.current) {
+      clearInterval(searchRevealTimerRef.current)
+      searchRevealTimerRef.current = null
+    }
+    if (searchFetchProgressTimerRef.current) {
+      clearInterval(searchFetchProgressTimerRef.current)
+      searchFetchProgressTimerRef.current = null
+    }
+    if (searchFinalizeProgressTimerRef.current) {
+      clearInterval(searchFinalizeProgressTimerRef.current)
+      searchFinalizeProgressTimerRef.current = null
+    }
+
+    searchFetchProgressTimerRef.current = setInterval(() => {
+      setSearchProgressTarget((prev) => {
+        if (prev >= 65) return prev
+        return prev + 2.5
+      })
+    }, 120)
+
     try {
       const response = await fetch('http://localhost:3000/api/search', {
         method: 'POST',
@@ -427,9 +498,62 @@ function App() {
               : (data?.title || data?.webpage_url || data?.audio_url || data?.proxy_url)
                 ? [data]
                 : []
+
+      if (searchFetchProgressTimerRef.current) {
+        clearInterval(searchFetchProgressTimerRef.current)
+        searchFetchProgressTimerRef.current = null
+      }
+
       setSearchResults(normalizedResults)
       setIsSearchResultsOpen(normalizedResults.length > 0)
-    } catch (err) { console.error(err) }
+      if (normalizedResults.length > 0) {
+        setSearchProgressTarget((prev) => Math.max(prev, 72))
+        setVisibleSearchCount(1)
+
+        const finalizeStart = Date.now()
+        const finalizeDuration = Math.max(700, normalizedResults.length * 120)
+        searchFinalizeProgressTimerRef.current = setInterval(() => {
+          const elapsed = Date.now() - finalizeStart
+          const ratio = Math.min(1, elapsed / finalizeDuration)
+          const target = 72 + ratio * 28
+          setSearchProgressTarget((prevTarget) => Math.max(prevTarget, target))
+          if (ratio >= 1) {
+            clearInterval(searchFinalizeProgressTimerRef.current)
+            searchFinalizeProgressTimerRef.current = null
+          }
+        }, 40)
+
+        searchRevealTimerRef.current = setInterval(() => {
+          setVisibleSearchCount((prev) => {
+            const next = prev + 1
+            if (next >= normalizedResults.length) {
+              clearInterval(searchRevealTimerRef.current)
+              searchRevealTimerRef.current = null
+              if (searchFinalizeProgressTimerRef.current) {
+                clearInterval(searchFinalizeProgressTimerRef.current)
+                searchFinalizeProgressTimerRef.current = null
+              }
+              setSearchProgressTarget(100)
+              return normalizedResults.length
+            }
+            return next
+          })
+        }, 90)
+      } else {
+        setSearchProgressTarget(100)
+      }
+    } catch (err) {
+      console.error(err)
+      if (searchFetchProgressTimerRef.current) {
+        clearInterval(searchFetchProgressTimerRef.current)
+        searchFetchProgressTimerRef.current = null
+      }
+      if (searchFinalizeProgressTimerRef.current) {
+        clearInterval(searchFinalizeProgressTimerRef.current)
+        searchFinalizeProgressTimerRef.current = null
+      }
+      setSearchProgressTarget(0)
+    }
     finally { setLoading(false) }
   }
 
@@ -804,12 +928,47 @@ function App() {
           </header>
 
           {/* Search Results */}
+          {loading && (
+            <section className="rounded-3xl border border-pink-500/20 bg-gradient-to-br from-pink-500/10 via-purple-900/10 to-transparent p-5 sm:p-6">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-xl font-semibold">Searching...</h2>
+                <span className="text-xs text-pink-300 animate-pulse">{Math.round(searchProgress)}%</span>
+              </div>
+
+              <div className="mb-4 h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-pink-400 transition-all duration-200"
+                  style={{ width: `${Math.max(0, Math.min(100, searchProgress))}%` }}
+                />
+              </div>
+
+              <div className="grid gap-4">
+                {[0, 1, 2].map((item) => (
+                  <div key={item} className="min-w-0 flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 md:flex-row md:items-center animate-pulse">
+                    <div className="h-24 w-24 shrink-0 rounded-2xl bg-white/10" />
+                    <div className="min-w-0 flex-1">
+                      <div className="h-4 w-2/3 rounded bg-white/10" />
+                      <div className="mt-3 h-3 w-1/2 rounded bg-white/10" />
+                    </div>
+                    <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+                      <div className="h-9 w-full rounded-full bg-white/10 sm:w-24" />
+                      <div className="h-9 w-full rounded-full bg-white/10 sm:w-24" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           {searchResults.length > 0 && (
             <section className="rounded-3xl border border-pink-500/20 bg-gradient-to-br from-pink-500/10 via-purple-900/10 to-transparent p-5 sm:p-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-xl font-semibold">Search results</h2>
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-pink-300">{searchResults.length} found</span>
+                  {visibleSearchCount < searchResults.length && (
+                    <span className="text-xs text-pink-300">{Math.round(searchProgress)}%</span>
+                  )}
                   <button
                     type="button"
                     onClick={() => setIsSearchResultsOpen((prev) => !prev)}
@@ -822,8 +981,8 @@ function App() {
 
               {isSearchResultsOpen && (
                 <div className="grid gap-4">
-                  {searchResults.map((result, index) => (
-                    <div key={`${result.webpage_url || result.title || 'result'}-${index}`} className="min-w-0 flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 md:flex-row md:items-center">
+                  {searchResults.slice(0, visibleSearchCount || searchResults.length).map((result, index) => (
+                    <div key={`${result.webpage_url || result.title || 'result'}-${index}`} className="min-w-0 flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 md:flex-row md:items-center animate-in fade-in slide-in-from-bottom-2 duration-300" style={{ animationDelay: `${index * 60}ms` }}>
                       {result.thumbnail ? (
                         <img src={result.thumbnail} alt="Thumbnail" className="h-24 w-24 shrink-0 rounded-2xl object-cover shadow-[0_10px_30px_rgba(236,72,153,0.25)]" />
                       ) : (
