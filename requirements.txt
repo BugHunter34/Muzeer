@@ -4,3 +4,5 @@ flask
 flask-cors
 requests
 urllib3
+pymongo
+bcrypt
