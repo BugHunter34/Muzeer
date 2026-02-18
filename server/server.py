@@ -12,12 +12,12 @@ from flask.cli import load_dotenv
 
 
 app = Flask(__name__)
-allowed_origins = [
-    "http://localhost:5173",
-    "https://evocative-fransisca-bootlessly.ngrok-free.dev"
-]
+#allowed_origins = [
+#    "http://localhost:5173",
+#    "https://evocative-fransisca-bootlessly.ngrok-free.dev"
+#]
 
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}})
 YDL_OPTS = {
     "format": "bestaudio/best",
     "quiet": True,

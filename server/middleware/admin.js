@@ -1,6 +1,9 @@
 module.exports = (req, res, next) => {
-    if (!req.user) return res.status(401).send({ message: "Not logged in" });
-    if (req.user.role !== "admin") return res.status(403).send({ message: "Admin only" });
+  // auth.js runs first and creates req.user. 
+  // Now we just check if that user is an admin.
+  if (req.user && req.user.role === 'admin') {
     next();
-  };
-  
+  } else {
+    return res.status(403).json({ message: "Access denied. Admins only, nice try!" });
+  }
+};

@@ -6,13 +6,17 @@ var logger = require('morgan');
 var cors = require('cors');
 var mongoose = require('mongoose');
 require("dotenv").config();
-
 // --- IMPORTS ---
 var indexRouter = require('./routes/index');
 var usersRouter = require('./routes/users');
 var authRoutes = require('./routes/login'); // This handles login AND register
-
 var app = express();
+
+// --- CORS CONFIGURATION ---
+const allowedOrigins = [
+  'http://localhost:5173', 
+  'https://evocative-fransisca-bootlessly.ngrok-free.dev'
+];
 
 // --- DATABASE CONNECTION ---
 mongoose
@@ -31,15 +35,33 @@ app.use(express.json()); // MUST be before routes to read JSON body
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(cors()); 
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true, // This is the magic line that allows the login cookie!
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
+  allowedHeaders: "Content-Type, Authorization"
+}));
 
 // --- ROUTES ---
 app.use('/', indexRouter);
 app.use('/users', usersRouter);
+app.use('/api/admin', require('./routes/admin'));
 
 // Mount the Auth Router
 // This means all routes in 'routes/login.js' will start with /api/auth
 app.use('/api/auth', authRoutes); 
+
+
 
 // --- ERROR HANDLING ---
 // Catch 404 and forward to error handler

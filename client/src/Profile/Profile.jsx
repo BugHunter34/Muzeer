@@ -1,14 +1,18 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 export default function Profile() {
   const navigate = useNavigate();
   const token = localStorage.getItem('token');
 
-  const userName = useMemo(() => {
-    if (!token) return 'Guest';
-    return 'User';
-  }, [token]);
+  // 1. Safely read the user data
+  const savedUser = localStorage.getItem('user');
+  const userData = savedUser ? JSON.parse(savedUser) : null;
+
+  // 2. THE FIX: Use optional chaining (?.) and OR (||) 
+  // If userData exists but userName is missing, it safely falls back to 'User'
+  const userName = userData?.userName || 'User';
+  const email = userData?.email || 'No email provided';
 
   useEffect(() => {
     if (!token) {
@@ -18,6 +22,7 @@ export default function Profile() {
 
   const handleLogout = () => {
     localStorage.removeItem('token');
+    localStorage.removeItem('user');
     navigate('/login');
   };
 
@@ -102,7 +107,7 @@ export default function Profile() {
                   fontSize: '20px'
                 }}
               >
-                {userName[0]}
+                {userName ? userName.charAt(0) : 'U'}
               </div>
               <div>
                 <h2 style={{ margin: 0, fontSize: '20px' }}>{userName}</h2>
@@ -115,7 +120,7 @@ export default function Profile() {
             <div style={{ marginTop: '18px', display: 'grid', gap: '10px' }}>
               <div style={{ borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', padding: '10px 12px' }}>
                 <p style={{ margin: 0, color: 'rgba(255,255,255,0.58)', fontSize: '12px' }}>Email</p>
-                <p style={{ margin: '3px 0 0 0' }}>{token ? 'your-account@muzeer.app' : '—'}</p>
+                <p style={{ margin: '3px 0 0 0' }}>{token ? email : '—'}</p>
               </div>
               <div style={{ borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', padding: '10px 12px' }}>
                 <p style={{ margin: 0, color: 'rgba(255,255,255,0.58)', fontSize: '12px' }}>Plan</p>

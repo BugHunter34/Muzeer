@@ -1,5 +1,5 @@
 // LOGIN - Updated for Backend-Only Cookies
-const Login = require("../models/Login");
+const Login = require("../models/login");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 
@@ -15,20 +15,12 @@ const sanitizeUser = (user) => {
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).send({ message: "Chybí email nebo heslo" });
-    }
-
     const user = await Login.findOne({ email: email.toLowerCase().trim() });
-    if (!user) {
-      return res.status(401).send({ message: "Špatné přihlašovací údaje" });
-    }
+    
+    if (!user) return res.status(401).json({ message: "Invalid credentials" });
 
- const isMatch = await bcrypt.compare(password, user.passwordHash);
-  if (!isMatch) {
-     return res.status(401).send({ message: "Špatné přihlašovací údaje" });
-}
+    const isMatch = await bcrypt.compare(password, user.passwordHash);
+    if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
 
     const token = jwt.sign(
       { id: user._id, role: user.role },
@@ -36,22 +28,23 @@ exports.login = async (req, res) => {
       { expiresIn: "2h" }
     );
 
-    // --- NEW: SET COOKIE INSTEAD OF JUST SENDING TOKEN ---
     res.cookie("token", token, {
-      httpOnly: true,       // Cannot be accessed by frontend JS (XSS Protection)
-      secure: false,        // Set to true in production (requires HTTPS)
-      maxAge: 2 * 60 * 60 * 1000, // 2 hours in milliseconds
-      sameSite: "lax",      // Helps against CSRF
+      httpOnly: true,
+      secure: false, // Set to true if using HTTPS/Ngrok
+      maxAge: 2 * 60 * 60 * 1000,
+      sameSite: "lax",
     });
 
-    res.status(200).send({
+    // IMPORTANT: Send the token in the body too if your React code expects it there
+    res.status(200).json({
       message: "Login successful",
-      // We still send user data, but the token is now in the browser's cookie jar
-      user: sanitizeUser(user) 
+      token: token, 
+      user: { id: user._id, email: user.email, userName: user.userName, role: user.role }
     });
 
   } catch (err) {
-    res.status(500).send({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: err.message });
   }
 };
 

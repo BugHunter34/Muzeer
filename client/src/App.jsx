@@ -18,10 +18,29 @@ const friends = [
 
 function App() {
   const [appName] = useState('Muzeer') 
+  const navigate = useNavigate();
+  const [user, setUser] = useState(null);
+
+  // 1. Check for a logged-in user when the app loads
+  useEffect(() => {
+    const savedUser = localStorage.getItem('user');
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+    }
+  }, []);
+  console.log("APP COMPONENT THINKS USER IS:", user);
+
+  // 2. Replace your "Mock" functions with real ones
+  const handleLogOut = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setUser(null); // Clear the sidebar
+    navigate('/login');
+  };
 
   // --- Auth State ---
   // null = guest, object = logged in. Toggle this to see 'My Account'
-  const [user, setUser] = useState(null) 
+
 
   // --- Data State ---
   const [query, setQuery] = useState('')
@@ -296,17 +315,9 @@ function App() {
       playTrack(queue[index], true) 
   }
 
-  const navigate = useNavigate();
 
 
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      // If a token exists, you can consider the user "logged in" 
-      // Ideally, you'd fetch the user profile from /api/auth/me here
-      setUser({ name: 'User' }); 
-    }
-  }, []);
+
 
   useEffect(() => {
     if (!audioRef.current) return
@@ -769,7 +780,7 @@ function App() {
               <div className="relative flex items-center gap-3">
                   {user ? (
                       <button onClick={handleProfileMock} className="text-xs text-emerald-300 hover:text-emerald-200">
-                      Welcome, {user.name}
+                      Welcome, {user.userName ? user.userName : 'User'}!
                       </button>
                   ) : (
                       <button onClick={handleAuthMock} className="text-xs text-white/60 hover:text-white">Login</button>
@@ -852,18 +863,24 @@ function App() {
                 <div className="mb-6 border-b border-white/10 pb-6">
                     {user ? (
                         <div className="rounded-xl bg-white/5 p-3 text-center">
-                            <div className="mx-auto h-10 w-10 rounded-full bg-pink-500 flex items-center justify-center font-bold text-black mb-2">
-                                {user.name[0]}
+                            <div className="mx-auto h-10 w-10 rounded-full bg-pink-500 flex items-center justify-center font-bold text-black mb-2 uppercase">
+                                {/* Safely grab the first letter */}
+                                {user?.userName ? user.userName.charAt(0) : 'U'}
                             </div>
-                            <button onClick={handleProfileMock} className="text-sm font-semibold hover:text-pink-200">My Account</button>
-                            <button onClick={handleLogOutMock} className="text-xs text-pink-400 hover:text-pink-300 mt-1">Log Out</button>
+                            <button onClick={() => navigate('/profile')} className="text-sm font-semibold hover:text-pink-200">
+                                {/* Safely display the name */}
+                                {user?.userName || 'My Profile'}
+                            </button>
+                            <button onClick={handleLogOut} className="block w-full text-xs text-pink-400 hover:text-pink-300 mt-1">
+                                Log Out
+                            </button>
                         </div>
                     ) : (
                         <div className="grid grid-cols-2 gap-2">
-                            <button onClick={handleAuthMock} className="rounded-xl bg-pink-500 px-3 py-2 text-xs font-bold text-black hover:bg-pink-400 transition">
+                            <button onClick={() => navigate('/login')} className="rounded-xl bg-pink-500 px-3 py-2 text-xs font-bold text-black hover:bg-pink-400 transition">
                                 Login
                             </button>
-                            <button onClick={handleRegisterMock} className="rounded-xl border border-white/10 px-3 py-2 text-xs hover:bg-white/5 transition">
+                            <button onClick={() => navigate('/register')} className="rounded-xl border border-white/10 px-3 py-2 text-xs hover:bg-white/5 transition">
                                 Register
                             </button>
                         </div>
@@ -913,7 +930,7 @@ function App() {
           <header className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
             <div>
               <p className="text-xs uppercase tracking-[0.4em] text-[color:var(--muted)]">Now Trending</p>
-              <h1 className="mt-2 text-3xl font-semibold">Good evening, {user ? user.name : 'Admin'}</h1>
+              <h1 className="mt-2 text-3xl font-semibold">Good evening, {user ? user.userName : 'Admin'}</h1>
             </div>
             
             <form onSubmit={handleSearch} className="flex w-full items-center gap-3 relative group sm:w-auto">

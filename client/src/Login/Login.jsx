@@ -25,12 +25,14 @@ export default function Login() {
       const data = await response.json();
 
       if (response.ok) {
-        // Save the JWT token to local storage
+        // Save the JWT token
         localStorage.setItem('token', data.token);
-        // Save user info if needed: localStorage.setItem('user', JSON.stringify(data.user));
+        
+        // UNCOMMENT THIS LINE: Save the user data so App.jsx can see it!
+        localStorage.setItem('user', JSON.stringify(data.user)); 
         
         alert('Login successful!');
-        navigate('/'); // Redirect back to the main app page
+        window.location.href = '/'; // Redirect back to the main app page
       } else {
         setError(data.message || 'Login failed');
       }
