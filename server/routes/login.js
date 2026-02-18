@@ -12,9 +12,11 @@ const admin = require("../middleware/admin");
 // Login je v souboru controllers/login.js
 router.post("/login", LoginController.login);
 
-// Register je v souboru controllers/register.js
-// Díky tomu, že jsi použil 'exports.register', toto bude fungovat:
+
 router.post("/register", RegisterController.register); 
+
+// 2Fac
+router.post('/login/verify-2fa', LoginController.verify2FA);
 
 // --- PROTECTED ROUTES (Admin) ---
 // Tyto funkce jsou (zatím) definované v LoginControlleru (jak jsme řešili dříve)

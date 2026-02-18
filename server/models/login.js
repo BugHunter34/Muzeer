@@ -1,6 +1,11 @@
 const mongoose = require("mongoose");
 
 const loginSchema = new mongoose.Schema({
+  // Add this inside your loginSchema:
+  twoFactorCode: { type: String },
+  twoFactorExpires: { type: Date },
+  isVerified: { type: Boolean, default: false },
+  verifyToken: { type: String },
   email: { 
     type: String, 
     required: true, 
