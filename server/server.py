@@ -8,8 +8,12 @@ import bcrypt
 from urllib.parse import quote
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}})
+allowed_origins = [
+    "http://localhost:5173",
+    "https://evocative-fransisca-bootlessly.ngrok-free.dev"
+]
 
+CORS(app, resources={r"/*": {"origins": "*"}})
 YDL_OPTS = {
     "format": "bestaudio/best",
     "quiet": True,
@@ -144,4 +148,5 @@ def register():
     return jsonify({"ok": True}), 201
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=3000, debug=True)
+    # Make sure Flask is also listening globally
+    app.run(host='0.0.0.0', port=3000)

@@ -677,7 +677,7 @@ function App() {
           <header className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
             <div>
               <p className="text-xs uppercase tracking-[0.4em] text-[color:var(--muted)]">Now Trending</p>
-              <h1 className="mt-2 text-3xl font-semibold">Good evening, {user ? user.name : 'Guest'}</h1>
+              <h1 className="mt-2 text-3xl font-semibold">Good evening, {user ? user.name : 'Admin'}</h1>
             </div>
             
             <form onSubmit={handleSearch} className="flex w-full items-center gap-3 relative group sm:w-auto">
