@@ -71,6 +71,50 @@ app.get('/api/auth/verify', authMiddleware, (req, res) => {
   res.status(200).json({ message: "User is alive" });
 });
 
+const Login = require('./models/login'); // Ujisti se, že cesta k modelu je správná
+
+// ENDPOINT PRO KLIKNUTÍ NA LINK V EMAILU
+app.get('/api/auth/verify-email/:token', async (req, res) => {
+  try {
+    const token = req.params.token;
+    
+    // 1. Najdi uživatele s tímto unikátním tokenem
+    const user = await Login.findOne({ verifyToken: token });
+
+    // 2. Pokud token neexistuje nebo už byl použit
+    if (!user) {
+      return res.status(400).send(`
+        <div style="background-color: #02021a; color: #ff2a2a; height: 100vh; width: 100vw; display: flex; align-items: center; justify-content: center; font-family: sans-serif; margin: 0;">
+          <h2>❌ Invalid or expired verification link.</h2>
+        </div>
+      `);
+    }
+
+    // 3. ÚSPĚCH! Odemkni uživatele a smaž token z DB
+    user.isVerified = true;
+    user.verifyToken = undefined;
+    await user.save();
+
+    // 4. Pošli krásnou HTML odpověď přímo do prohlížeče
+    res.status(200).send(`
+      <div style="background-color: #02021a; color: #facc15; height: 100vh; width: 100vw; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; margin: 0; text-align: center;">
+        <h1 style="font-size: 3rem; margin-bottom: 10px;">✅ Auth Completed!</h1>
+        <p style="color: rgba(255,255,255,0.7); font-size: 1.2rem;">Your account is now verified. You can close this window and log in to Muzeer.</p>
+        
+        <script>
+          setTimeout(() => {
+            window.close();
+          }, 3000);
+        </script>
+      </div>
+    `);
+
+  } catch (err) {
+    console.error("Verification Error:", err);
+    res.status(500).send("Server error during verification.");
+  }
+});
+
 // --- ERROR HANDLING ---
 // Catch 404 and forward to error handler
 app.use(function(req, res, next) {

@@ -4,17 +4,23 @@ import AuthLayout from './AuthLayout';
 import { authFormStyles } from './authFormStyles';
 
 export default function Login() {
+  // Login States
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  
+  // 2FA States
+  const [is2FA, setIs2FA] = useState(false);
+  const [twoFacCode, setTwoFacCode] = useState('');
+  
   const navigate = useNavigate();
 
+  // --- STEP 1: INITIAL LOGIN (PASSWORD CHECK) ---
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
 
     try {
-      // Connecting to your Express backend
       const response = await fetch('http://localhost:3000/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -24,20 +30,43 @@ export default function Login() {
 
       const data = await response.json();
 
-      if (response.ok) {
-        // Save the JWT token
-        localStorage.setItem('token', data.token);
-        
-        // UNCOMMENT THIS LINE: Save the user data so App.jsx can see it!
-        localStorage.setItem('user', JSON.stringify(data.user)); 
-        
-        alert('Login successful!');
-        window.location.href = '/'; // Redirect back to the main app page
+      if (response.ok && data.requires2FA) {
+        // Backend says password is good, now show the 2FA screen
+        setIs2FA(true);
       } else {
         setError(data.message || 'Login failed');
       }
     } catch (err) {
       setError('Server error. Is the backend running?');
+    }
+  };
+
+  // --- STEP 2: VERIFY THE 6-DIGIT CODE ---
+  const handleVerify2FA = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    try {
+      const response = await fetch('http://localhost:3000/api/auth/login/verify-2fa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code: twoFacCode }),
+        credentials: 'include'
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // SUCCESS! Save token and user data
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user)); 
+        
+        window.location.href = '/'; // Hard redirect to wake up App.jsx
+      } else {
+        setError(data.message || 'Invalid verification code');
+      }
+    } catch (err) {
+      setError('Server error during verification.');
     }
   };
 
@@ -90,6 +119,14 @@ export default function Login() {
     helper: {
       ...authFormStyles.helper,
       marginTop: '10px'
+    },
+    codeBox: {
+      ...authFormStyles.input,
+      fontSize: '24px',
+      letterSpacing: '8px',
+      textAlign: 'center',
+      fontWeight: 'bold',
+      color: '#facc15' // Muzeer Yellow
     }
   };
 
@@ -99,18 +136,52 @@ export default function Login() {
       heroAccent="Muzeer"
       heroText="Your curated soundtrack is waiting. Log in to sync your playlists, discover new tracks, and stay in the flow."
       heroPills={['Curated drops', 'Daily mixes', 'Community picks']}
-      cardTitle="Sign in"
-      cardSubtitle="Use your account details to continue."
+      
+      // Change title and subtitle dynamically based on state
+      cardTitle={is2FA ? "Security Check" : "Sign in"}
+      cardSubtitle={is2FA ? `Enter the 6-digit code we sent to ${email}` : "Use your account details to continue."}
+      
       error={error}
       footer={(
         <div style={styles.helper}>
-          <span>Need an account?</span>
-          <span style={styles.link} onClick={() => navigate('/register')}>
-            Create one
+          <span>{is2FA ? "Didn't receive it?" : "Need an account?"}</span>
+          <span 
+            style={styles.link} 
+            onClick={() => is2FA ? setIs2FA(false) : navigate('/register')}
+          >
+            {is2FA ? "Try logging in again" : "Create one"}
           </span>
         </div>
       )}
     >
+      
+      {/* --- CONDITIONAL RENDER: 2FA OR NORMAL LOGIN --- */}
+      {is2FA ? (
+        
+        /* 2FA VERIFICATION FORM */
+        <form onSubmit={handleVerify2FA} style={styles.form}>
+          <div style={styles.formGroup}>
+            <label style={{...styles.label, textAlign: 'center', display: 'block'}}>Verification Code</label>
+            <input
+              style={styles.codeBox}
+              type="text"
+              maxLength="6"
+              placeholder="••••••"
+              value={twoFacCode}
+              onChange={(e) => setTwoFacCode(e.target.value.replace(/\D/g, ''))} // Only allow numbers
+              required
+              autoFocus
+            />
+          </div>
+          <button style={{...styles.button, background: '#facc15', color: 'black'}} className="auth-button" type="submit">
+            Authenticate
+          </button>
+        </form>
+
+      ) : (
+
+        /* STANDARD LOGIN FORM */
+        <>
           <form onSubmit={handleLogin} style={styles.form}>
             <div style={styles.formGroup}>
               <label style={styles.label}>Email</label>
@@ -161,6 +232,9 @@ export default function Login() {
               Continue with Apple
             </button>
           </div>
+        </>
+      )}
+
     </AuthLayout>
   );
 }

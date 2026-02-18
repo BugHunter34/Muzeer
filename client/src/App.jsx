@@ -967,8 +967,8 @@ function App() {
         <main className="min-w-0 space-y-6 overflow-y-auto pr-1 custom-scrollbar max-h-[calc(100vh-220px)]">
           <header className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
             <div>
-              <p className="text-xs uppercase tracking-[0.4em] text-[color:var(--muted)]">Now Trending</p>
-              <h1 className="mt-2 text-3xl font-semibold">Good evening, {user ? user.userName : 'Admin'}</h1>
+              <p className="text-xs uppercase tracking-[0.4em] text-[color:var(--muted)]">Text</p>
+              <h1 className="mt-2 text-3xl font-semibold">Good evening, {user ? user.userName : 'Guest'}</h1>
             </div>
             
             <form onSubmit={handleSearch} className="flex w-full items-center gap-3 relative group sm:w-auto">
