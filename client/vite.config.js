@@ -12,7 +12,8 @@ export default defineConfig({
     // In Vite 7, if 'all' isn't working, we must be explicit
     allowedHosts: [
       'evocative-fransisca-bootlessly.ngrok-free.dev',
-      '.ngrok-free.dev' // This allows any subdomain of ngrok-free.dev
+      '.ngrok-free.dev', // This allows any subdomain of ngrok-free.dev
+      'localhost'
     ],
     
     

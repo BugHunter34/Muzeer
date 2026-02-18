@@ -1,11 +1,15 @@
 from flask import Flask, request, jsonify, Response, stream_with_context
 from flask_cors import CORS
 import yt_dlp
+from yt_dlp.utils import match_filter_func
 import random
 import requests
 from pymongo import MongoClient
 import bcrypt
 from urllib.parse import quote
+from flask.cli import load_dotenv
+
+
 
 app = Flask(__name__)
 allowed_origins = [
@@ -18,10 +22,13 @@ YDL_OPTS = {
     "format": "bestaudio/best",
     "quiet": True,
     "noplaylist": True,
-    "default_search": "ytsearch",
+    "force_generic_extractor": False, # Ensure we use the specialized YT extractor
+    "extract_flat": "in_playlist", 
+    "default_search": "https://music.youtube.com/search?q=",
 }
 
-client = MongoClient("mongodb+srv://admin:admin@hudba.lrwxpfn.mongodb.net/mydatabase?retryWrites=true&w=majority&appName=Hudba")
+load_dotenv()
+client = MongoClient("DATABASE")
 db = client["mydatabase"]
 users = db["users"]
 
@@ -37,57 +44,99 @@ def api_search():
     query = data.get("query")
     if not query: return jsonify({"error": "Missing query"}), 400
 
-    try:
-        with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
-            info = ydl.extract_info(query, download=False)
-            if "entries" in info: info = info["entries"][0]
+    def to_track_payload(info, fallback_query):
+        video_id = info.get("id")
+        # If info.get("thumbnail") is missing, we build it from the ID
+        thumbnail = info.get("thumbnail") or (f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg" if video_id else "")
+        
+        return {
+            "title": info.get("title", fallback_query),
+            "artist": info.get("uploader", "Unknown Artist"),
+            "webpage_url": info.get("url") or info.get("webpage_url") or f"https://www.youtube.com/watch?v={video_id}",
+            "thumbnail": thumbnail,
+            "audio_url": info.get("url", ""), # This might be empty in 'flat' mode
+            # Point to your stream route using the video ID
+            "proxy_url": f"{request.host_url.rstrip('/')}/api/stream?vid={video_id}",
+            "duration": info.get("duration", 0)
+        }
 
-            return jsonify({
-                "title": info.get("title", query),
-                "artist": info.get("uploader", "Unknown Artist"),
-                "webpage_url": info.get("webpage_url", ""),
-                "thumbnail": info.get("thumbnail", ""),
-                "audio_url": info.get("url", ""),
-                "proxy_url": build_proxy_url(info.get("url", "")),
-                "duration": info.get("duration", 0)
-            })
+    search_opts = {
+        "extract_flat": True, # Keep it fast!
+        "quiet": True,
+        # Filter for songs (approx 1m to 15m)
+        #"match_filter": yt_dlp.utils.match_filter_func("duration > 40 & duration < 3000"),
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(search_opts) as ydl:
+            normalized_query = str(query).strip()
+            
+            # Check if it's a direct link
+            if normalized_query.startswith(("http://", "https://")):
+                info = ydl.extract_info(normalized_query, download=False)
+                # Handle playlists or single videos
+                if "entries" in info:
+                    results = [to_track_payload(e, normalized_query) for e in info["entries"] if e]
+                    return jsonify(results)
+                return jsonify([to_track_payload(info, normalized_query)])
+
+            # Normal search: add "official audio" to help get music results
+            search_info = ydl.extract_info(f"ytsearch10:{normalized_query} official audio", download=False)
+            entries = (search_info or {}).get("entries") or []
+            results = [to_track_payload(entry, normalized_query) for entry in entries if entry]
+            
+            return jsonify(results)
+            
     except Exception as e:
+        print(f"Search Error: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/stream", methods=["GET"])
 def api_stream():
-    audio_url = request.args.get("url", "")
-    if not audio_url:
-        return jsonify({"error": "Missing url"}), 400
+    # 1. Look for 'vid' instead of 'url'
+    video_id = request.args.get("vid")
+    
+    if not video_id:
+        return jsonify({"error": "Missing video ID"}), 400
 
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "*/*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://www.youtube.com/",
+    # 2. Extract the actual audio URL using yt-dlp
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "quiet": True,
     }
-    range_header = request.headers.get("Range")
-    if range_header:
-        headers["Range"] = range_header
 
-    upstream = requests.get(audio_url, headers=headers, stream=True)
-    response = Response(
-        stream_with_context(upstream.iter_content(chunk_size=8192)),
-        status=upstream.status_code,
-    )
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # We build the full URL to extract the stream
+            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+            audio_url = info.get("url")
 
-    passthrough_headers = [
-        "Content-Type",
-        "Content-Length",
-        "Content-Range",
-        "Accept-Ranges",
-        "Cache-Control",
-    ]
-    for header in passthrough_headers:
-        if header in upstream.headers:
-            response.headers[header] = upstream.headers[header]
+        if not audio_url:
+            return jsonify({"error": "Could not extract audio"}), 500
 
-    return response
+        # 3. Proxy the stream (Your existing requests logic)
+        headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://www.youtube.com/"}
+        range_header = request.headers.get("Range")
+        if range_header: headers["Range"] = range_header
+
+        upstream = requests.get(audio_url, headers=headers, stream=True)
+        
+        # Build the response to send to the browser
+        response = Response(
+            stream_with_context(upstream.iter_content(chunk_size=8192)),
+            status=upstream.status_code,
+        )
+
+        # Copy headers back so the browser knows it's audio
+        for h in ["Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"]:
+            if h in upstream.headers:
+                response.headers[h] = upstream.headers[h]
+
+        return response
+
+    except Exception as e:
+        print(f"Streaming error: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/trending", methods=["GET"])
 def api_trending():
@@ -130,8 +179,8 @@ def register():
     email = (data.get("email") or "").lower().strip()
     password = data.get("password") or ""
     user_name = (data.get("userName") or "").strip()
-    if not email or not password:
-        return jsonify({"error": "Missing email or password"}), 400
+    if not email or not password or not user_name:
+        return jsonify({"error": "Missing email, password, or username"}), 400
 
     if users.find_one({"email": email}):
         return jsonify({"error": "User already exists"}), 400
@@ -149,4 +198,4 @@ def register():
 
 if __name__ == "__main__":
     # Make sure Flask is also listening globally
-    app.run(host='0.0.0.0', port=3000)
+    app.run(host='0.0.0.0', port=5000)

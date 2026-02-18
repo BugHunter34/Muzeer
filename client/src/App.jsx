@@ -25,7 +25,11 @@ function App() {
 
   // --- Data State ---
   const [query, setQuery] = useState('')
-  const [searchResult, setSearchResult] = useState(null)
+  const [searchResults, setSearchResults] = useState([])
+  const [visibleSearchCount, setVisibleSearchCount] = useState(0)
+  const [searchProgress, setSearchProgress] = useState(0)
+  const [searchProgressTarget, setSearchProgressTarget] = useState(0)
+  const [isSearchResultsOpen, setIsSearchResultsOpen] = useState(false)
   const [featuredSongs, setFeaturedSongs] = useState([]) // Trending
   const [quickPicks, setQuickPicks] = useState([]) // Most Played
   const [loading, setLoading] = useState(false)
@@ -51,6 +55,10 @@ function App() {
   const dataArrayRef = useRef(null)
   const sourceNodeRef = useRef(null)
   const rafRef = useRef(null)
+  const searchRevealTimerRef = useRef(null)
+  const searchFetchProgressTimerRef = useRef(null)
+  const searchFinalizeProgressTimerRef = useRef(null)
+  const searchSmoothProgressTimerRef = useRef(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [volume, setVolume] = useState(0.5) 
   const [currentTime, setCurrentTime] = useState(0)
@@ -67,7 +75,7 @@ function App() {
     // 1. Fetch Trending
     const fetchTrending = async () => {
       try {
-        const res = await fetch('http://localhost:3000/api/trending')
+        const res = await fetch('http://localhost:5000/api/trending')
         const data = await res.json()
         setFeaturedSongs(data)
       } catch (e) { console.error("Trending fetch error", e) }
@@ -90,6 +98,18 @@ function App() {
     audio.volume = volume
 
     return () => {
+      if (searchRevealTimerRef.current) {
+        clearInterval(searchRevealTimerRef.current)
+      }
+      if (searchFetchProgressTimerRef.current) {
+        clearInterval(searchFetchProgressTimerRef.current)
+      }
+      if (searchFinalizeProgressTimerRef.current) {
+        clearInterval(searchFinalizeProgressTimerRef.current)
+      }
+      if (searchSmoothProgressTimerRef.current) {
+        clearInterval(searchSmoothProgressTimerRef.current)
+      }
       audio.removeEventListener('timeupdate', updateTime)
       audio.removeEventListener('loadedmetadata', updateDuration)
       audio.removeEventListener('ended', onEnded)
@@ -231,7 +251,7 @@ function App() {
     if (!streamUrl && track.webpage_url) {
       setLoading(true)
       try {
-        const res = await fetch('http://localhost:3000/api/search', {
+        const res = await fetch('http://localhost:5000/api/search', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ query: track.webpage_url }),
@@ -253,9 +273,17 @@ function App() {
 
     setCurrentTrack(track)
     audioRef.current.src = streamUrl
-    audioRef.current.play().catch(e => console.log("Playback error:", e))
-    setIsPlaying(true)
-    startVisualizer()
+    try {
+      await audioRef.current.play()
+      setIsPlaying(true)
+      startVisualizer()
+      return true
+    } catch (e) {
+      console.log("Playback error:", e)
+      setIsPlaying(false)
+      stopVisualizer()
+      return false
+    }
   }
 
   const addToQueue = (track) => {
@@ -280,6 +308,103 @@ function App() {
     }
   }, []);
 
+  useEffect(() => {
+    if (!audioRef.current) return
+    audioRef.current.volume = volume
+  }, [volume])
+
+  useEffect(() => {
+    if (searchSmoothProgressTimerRef.current) {
+      clearInterval(searchSmoothProgressTimerRef.current)
+      searchSmoothProgressTimerRef.current = null
+    }
+
+    searchSmoothProgressTimerRef.current = setInterval(() => {
+      setSearchProgress((prev) => {
+        const diff = searchProgressTarget - prev
+        if (Math.abs(diff) < 0.35) {
+          if (searchSmoothProgressTimerRef.current) {
+            clearInterval(searchSmoothProgressTimerRef.current)
+            searchSmoothProgressTimerRef.current = null
+          }
+          return searchProgressTarget
+        }
+        const step = Math.max(0.35, Math.abs(diff) * 0.16)
+        return prev + Math.sign(diff) * step
+      })
+    }, 16)
+
+    return () => {
+      if (searchSmoothProgressTimerRef.current) {
+        clearInterval(searchSmoothProgressTimerRef.current)
+        searchSmoothProgressTimerRef.current = null
+      }
+    }
+  }, [searchProgressTarget])
+
+  useEffect(() => {
+    const pendingTrackRaw = localStorage.getItem('pendingTrack')
+    if (!pendingTrackRaw) return
+
+    let retryHandlersAttached = false
+    let retryTrack = null
+    let clearPendingTimeout = null
+
+    const schedulePendingClear = () => {
+      if (clearPendingTimeout) {
+        clearTimeout(clearPendingTimeout)
+      }
+      clearPendingTimeout = setTimeout(() => {
+        localStorage.removeItem('pendingTrack')
+      }, 1500)
+    }
+
+    const clearRetryHandlers = () => {
+      if (!retryHandlersAttached) return
+      window.removeEventListener('pointerdown', retryPlayback)
+      window.removeEventListener('keydown', retryPlayback)
+      retryHandlersAttached = false
+    }
+
+    const retryPlayback = async () => {
+      if (!retryTrack) return
+      const played = await playTrack(retryTrack)
+      if (played) {
+        schedulePendingClear()
+        clearRetryHandlers()
+      }
+    }
+
+    try {
+      const pendingTrack = JSON.parse(pendingTrackRaw)
+      if (pendingTrack) {
+        retryTrack = pendingTrack
+        playTrack(pendingTrack).then((played) => {
+          if (played) {
+            schedulePendingClear()
+            return
+          }
+          if (!retryHandlersAttached) {
+            window.addEventListener('pointerdown', retryPlayback)
+            window.addEventListener('keydown', retryPlayback)
+            retryHandlersAttached = true
+          }
+        })
+      } else {
+        localStorage.removeItem('pendingTrack')
+      }
+    } catch {
+      localStorage.removeItem('pendingTrack')
+    }
+
+    return () => {
+      if (clearPendingTimeout) {
+        clearTimeout(clearPendingTimeout)
+      }
+      clearRetryHandlers()
+    }
+  }, [])
+
   const handleAuthMock = () => {
     if (user) {
       // Log out logic
@@ -298,7 +423,15 @@ function App() {
       localStorage.removeItem('token'); // Clear the token on logout
     } else {
       // 3. Redirect to the login page instead of the alert
-      navigate('/Register');
+      navigate('/register');
+    }
+  };
+
+  const handleProfileMock = () => {
+    if (user) {
+      navigate('/profile');
+    } else {
+      navigate('/login');
     }
   };
 
@@ -319,19 +452,110 @@ function App() {
   // --- LOGIC: SEARCH ---
   const handleSearch = async (e) => {
     e.preventDefault()
-    if (!query) return
+    if (!query.trim()) return
     setLoading(true)
-    setSearchResult(null)
+    setSearchResults([])
+    setVisibleSearchCount(0)
+    setSearchProgress(0)
+    setSearchProgressTarget(0)
+    setIsSearchResultsOpen(true)
+    if (searchRevealTimerRef.current) {
+      clearInterval(searchRevealTimerRef.current)
+      searchRevealTimerRef.current = null
+    }
+    if (searchFetchProgressTimerRef.current) {
+      clearInterval(searchFetchProgressTimerRef.current)
+      searchFetchProgressTimerRef.current = null
+    }
+    if (searchFinalizeProgressTimerRef.current) {
+      clearInterval(searchFinalizeProgressTimerRef.current)
+      searchFinalizeProgressTimerRef.current = null
+    }
+
+    searchFetchProgressTimerRef.current = setInterval(() => {
+      setSearchProgressTarget((prev) => {
+        if (prev >= 65) return prev
+        return prev + 2.5
+      })
+    }, 120)
+
     try {
-      const response = await fetch('http://localhost:3000/api/search', {
+      
+      const response = await fetch('http://localhost:5000/api/search', {
+      
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query }),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error)
-      setSearchResult(data)
-    } catch (err) { console.error(err) } 
+      const normalizedResults = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.results)
+          ? data.results
+          : Array.isArray(data?.items)
+            ? data.items
+            : Array.isArray(data?.tracks)
+              ? data.tracks
+              : (data?.title || data?.webpage_url || data?.audio_url || data?.proxy_url)
+                ? [data]
+                : []
+
+      if (searchFetchProgressTimerRef.current) {
+        clearInterval(searchFetchProgressTimerRef.current)
+        searchFetchProgressTimerRef.current = null
+      }
+
+      setSearchResults(normalizedResults)
+      setIsSearchResultsOpen(normalizedResults.length > 0)
+      if (normalizedResults.length > 0) {
+        setSearchProgressTarget((prev) => Math.max(prev, 72))
+        setVisibleSearchCount(1)
+
+        const finalizeStart = Date.now()
+        const finalizeDuration = Math.max(700, normalizedResults.length * 120)
+        searchFinalizeProgressTimerRef.current = setInterval(() => {
+          const elapsed = Date.now() - finalizeStart
+          const ratio = Math.min(1, elapsed / finalizeDuration)
+          const target = 72 + ratio * 28
+          setSearchProgressTarget((prevTarget) => Math.max(prevTarget, target))
+          if (ratio >= 1) {
+            clearInterval(searchFinalizeProgressTimerRef.current)
+            searchFinalizeProgressTimerRef.current = null
+          }
+        }, 40)
+
+        searchRevealTimerRef.current = setInterval(() => {
+          setVisibleSearchCount((prev) => {
+            const next = prev + 1
+            if (next >= normalizedResults.length) {
+              clearInterval(searchRevealTimerRef.current)
+              searchRevealTimerRef.current = null
+              if (searchFinalizeProgressTimerRef.current) {
+                clearInterval(searchFinalizeProgressTimerRef.current)
+                searchFinalizeProgressTimerRef.current = null
+              }
+              setSearchProgressTarget(100)
+              return normalizedResults.length
+            }
+            return next
+          })
+        }, 90)
+      } else {
+        setSearchProgressTarget(100)
+      }
+    } catch (err) {
+      console.error(err)
+      if (searchFetchProgressTimerRef.current) {
+        clearInterval(searchFetchProgressTimerRef.current)
+        searchFetchProgressTimerRef.current = null
+      }
+      if (searchFinalizeProgressTimerRef.current) {
+        clearInterval(searchFinalizeProgressTimerRef.current)
+        searchFinalizeProgressTimerRef.current = null
+      }
+      setSearchProgressTarget(0)
+    }
     finally { setLoading(false) }
   }
 
@@ -544,7 +768,9 @@ function App() {
               {/* Auth + Theme */}
               <div className="relative flex items-center gap-3">
                   {user ? (
-                      <span className="text-xs text-emerald-300">Welcome, {user.name}</span>
+                      <button onClick={handleProfileMock} className="text-xs text-emerald-300 hover:text-emerald-200">
+                      Welcome, {user.name}
+                      </button>
                   ) : (
                       <button onClick={handleAuthMock} className="text-xs text-white/60 hover:text-white">Login</button>
                   )}
@@ -629,7 +855,7 @@ function App() {
                             <div className="mx-auto h-10 w-10 rounded-full bg-pink-500 flex items-center justify-center font-bold text-black mb-2">
                                 {user.name[0]}
                             </div>
-                            <p className="text-sm font-semibold">My Account</p>
+                            <button onClick={handleProfileMock} className="text-sm font-semibold hover:text-pink-200">My Account</button>
                             <button onClick={handleLogOutMock} className="text-xs text-pink-400 hover:text-pink-300 mt-1">Log Out</button>
                         </div>
                     ) : (
@@ -648,6 +874,16 @@ function App() {
                     {['Home', 'Search', 'Your Library', 'Create Playlist'].map((item) => (
                     <button
                         key={item}
+                        onClick={() => {
+                          if (item === 'Home') navigate('/')
+                          if (item === 'Search') {
+                            const searchInput = document.getElementById('landing-search-input')
+                            if (searchInput) {
+                              searchInput.focus()
+                              searchInput.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                            }
+                          }
+                        }}
                         className="flex w-full items-center justify-between rounded-xl border border-transparent px-3 py-2 text-left transition hover:border-white/10 hover:bg-white/5 group"
                     >
                         <span>{item}</span>
@@ -683,6 +919,7 @@ function App() {
             <form onSubmit={handleSearch} className="flex w-full items-center gap-3 relative group sm:w-auto">
                 <FaSearch className="absolute left-4 text-white/30 group-focus-within:text-pink-500" />
                 <input
+                  id="landing-search-input"
                   type="text"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
@@ -692,36 +929,91 @@ function App() {
             </form>
           </header>
 
-          {/* Search Result */}
-          {searchResult && (
-            <section className="rounded-3xl border border-pink-500/20 bg-gradient-to-br from-pink-500/10 via-purple-900/10 to-transparent p-5 sm:p-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="flex flex-col gap-6 md:flex-row md:items-center">
-                    {searchResult.thumbnail ? (
-                        <img src={searchResult.thumbnail} alt="Thumbnail" className="h-40 w-40 rounded-3xl object-cover shadow-[0_10px_40px_rgba(236,72,153,0.3)]" />
-                    ) : (
-                        <div className="h-40 w-40 rounded-3xl bg-gradient-to-br from-pink-500 to-rose-500" />
-                    )}
-                    <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                             <span className="px-2 py-1 rounded bg-pink-500/20 text-pink-300 text-[10px] font-bold uppercase tracking-wider">Top Result</span>
-                        </div>
-                        <h2 className="text-2xl font-bold">{searchResult.title}</h2>
-                        <p className="text-white/60 text-sm mt-1 mb-4">{searchResult.artist}</p>
-                        
-                        <div className="flex gap-3">
-                            <button 
-                                onClick={() => playTrack(searchResult)}
-                                className="flex items-center gap-2 rounded-full bg-[#00ff00] px-6 py-2.5 text-sm font-bold text-black transition hover:scale-105 hover:bg-[#00cc00]">
-                                <FaPlay /> Play Now
-                            </button>
-                            <button 
-                                onClick={() => addToQueue(searchResult)}
-                                className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-white/10">
-                                <MdQueueMusic /> Queue
-                            </button>
-                        </div>
+          {/* Search Results */}
+          {loading && (
+            <section className="rounded-3xl border border-pink-500/20 bg-gradient-to-br from-pink-500/10 via-purple-900/10 to-transparent p-5 sm:p-6">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-xl font-semibold">Searching...</h2>
+                <span className="text-xs text-pink-300 animate-pulse">{Math.round(searchProgress)}%</span>
+              </div>
+
+              <div className="mb-4 h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-pink-400 transition-all duration-200"
+                  style={{ width: `${Math.max(0, Math.min(100, searchProgress))}%` }}
+                />
+              </div>
+
+              <div className="grid gap-4">
+                {[0, 1, 2].map((item) => (
+                  <div key={item} className="min-w-0 flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 md:flex-row md:items-center animate-pulse">
+                    <div className="h-24 w-24 shrink-0 rounded-2xl bg-white/10" />
+                    <div className="min-w-0 flex-1">
+                      <div className="h-4 w-2/3 rounded bg-white/10" />
+                      <div className="mt-3 h-3 w-1/2 rounded bg-white/10" />
                     </div>
+                    <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+                      <div className="h-9 w-full rounded-full bg-white/10 sm:w-24" />
+                      <div className="h-9 w-full rounded-full bg-white/10 sm:w-24" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {searchResults.length > 0 && (
+            <section className="rounded-3xl border border-pink-500/20 bg-gradient-to-br from-pink-500/10 via-purple-900/10 to-transparent p-5 sm:p-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-xl font-semibold">Search results</h2>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-pink-300">{searchResults.length} found</span>
+                  {visibleSearchCount < searchResults.length && (
+                    <span className="text-xs text-pink-300">{Math.round(searchProgress)}%</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setIsSearchResultsOpen((prev) => !prev)}
+                    className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80 transition hover:bg-white/10"
+                  >
+                    {isSearchResultsOpen ? 'Hide' : 'Show'}
+                  </button>
                 </div>
+              </div>
+
+              {isSearchResultsOpen && (
+                <div className="grid gap-4">
+                  {searchResults.slice(0, visibleSearchCount || searchResults.length).map((result, index) => (
+                    <div key={`${result.webpage_url || result.title || 'result'}-${index}`} className="min-w-0 flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 md:flex-row md:items-center animate-in fade-in slide-in-from-bottom-2 duration-300" style={{ animationDelay: `${index * 60}ms` }}>
+                      {result.thumbnail ? (
+                        <img src={result.thumbnail} alt="Thumbnail" className="h-24 w-24 shrink-0 rounded-2xl object-cover shadow-[0_10px_30px_rgba(236,72,153,0.25)]" />
+                      ) : (
+                        <div className="h-24 w-24 shrink-0 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500" />
+                      )}
+
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-lg font-semibold">{result.title || 'Unknown title'}</p>
+                        <p className="mt-1 truncate text-sm text-white/60">{result.artist || 'Unknown artist'}</p>
+                      </div>
+
+                      <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+                        <button
+                          onClick={() => playTrack(result)}
+                          className="flex w-full items-center justify-center gap-2 rounded-full bg-[#00ff00] px-5 py-2 text-sm font-bold text-black transition hover:scale-105 hover:bg-[#00cc00] sm:w-auto"
+                        >
+                          <FaPlay /> Play
+                        </button>
+                        <button
+                          onClick={() => addToQueue(result)}
+                          className="flex w-full items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10 sm:w-auto"
+                        >
+                          <MdQueueMusic /> Queue
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </section>
           )}
 
@@ -953,9 +1245,8 @@ function App() {
                 step="0.05" 
                 value={volume} 
                 onChange={(e) => {
-                    const val = parseFloat(e.target.value)
-                    setVolume(val)
-                    audioRef.current.volume = val
+                const val = parseFloat(e.target.value)
+                setVolume(val)
                 }}
                 className="w-24 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
             />

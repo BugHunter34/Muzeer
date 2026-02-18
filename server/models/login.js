@@ -21,4 +21,4 @@ const loginSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
-module.exports = mongoose.model("Login", loginSchema);
+module.exports = mongoose.models.Login || mongoose.model("Login", loginSchema);

@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import AuthLayout from './AuthLayout';
+import { authFormStyles } from './authFormStyles';
 
 export default function Register() {
   const [email, setEmail] = useState('');
@@ -38,138 +40,79 @@ export default function Register() {
     }
   };
 
-  // --- INLINE STYLES (Scoped only to this page) ---
-  const s = {
-    wrapper: {
-      minHeight: '100vh',
-      backgroundColor: '#000054',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      fontFamily: 'sans-serif',
-      color: 'white',
-      padding: '20px'
-    },
-    card: {
-      backgroundColor: 'rgba(10, 10, 30, 0.9)',
-      padding: '40px',
-      borderRadius: '24px',
-      border: '1px solid rgba(255,255,255,0.1)',
-      width: '100%',
-      maxWidth: '420px',
-      boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
-    },
-    title: {
-      textAlign: 'center',
-      margin: '0 0 10px 0',
-      background: 'linear-gradient(to right, #ec4899, #fff)',
-      WebkitBackgroundClip: 'text',
-      WebkitTextFillColor: 'transparent',
-      fontSize: '32px'
-    },
-    input: {
-      width: '100%',
-      padding: '12px 20px',
-      borderRadius: '50px',
-      border: '1px solid rgba(255,255,255,0.1)',
-      backgroundColor: 'rgba(255,255,255,0.05)',
-      color: 'white',
-      outline: 'none',
-      marginBottom: '15px',
-      fontSize: '16px'
-    },
-    label: {
-      fontSize: '12px',
-      textTransform: 'uppercase',
-      color: 'rgba(255,255,255,0.5)',
-      display: 'block',
-      marginBottom: '5px',
-      marginLeft: '15px'
-    },
-    btn: {
-      width: '100%',
-      padding: '14px',
-      borderRadius: '50px',
-      border: 'none',
-      backgroundColor: '#ec4899',
-      color: 'black',
-      fontWeight: 'bold',
-      fontSize: '16px',
-      cursor: 'pointer',
-      marginTop: '10px',
-      transition: '0.3s'
-    },
-    error: {
-      backgroundColor: 'rgba(244, 63, 94, 0.2)',
-      color: '#f43f5e',
-      padding: '10px',
-      borderRadius: '10px',
-      marginBottom: '20px',
-      textAlign: 'center',
-      fontSize: '14px'
+  const styles = {
+    ...authFormStyles,
+    helper: {
+      ...authFormStyles.helper,
+      marginTop: '14px'
     }
   };
 
   return (
-    <div style={s.wrapper}>
-      <div style={s.card}>
-        <h1 style={s.title}>Create Account</h1>
-        <p style={{ textAlign: 'center', color: 'rgba(255,255,255,0.4)', marginBottom: '30px' }}>
-          Join the Pinkwave community
-        </p>
-
-        {error && <div style={s.error}>{error}</div>}
-
-        <form onSubmit={handleRegister}>
-          <label style={s.label}>Username</label>
-          <input 
-            style={s.input}
-            type="text" 
-            placeholder="CoolListener123"
-            value={userName}
-            onChange={(e) => setUserName(e.target.value)}
-            required
-          />
-
-          <label style={s.label}>Email</label>
-          <input 
-            style={s.input}
-            type="email" 
-            placeholder="email@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-
-          <label style={s.label}>Password</label>
-          <input 
-            style={s.input}
-            type="password" 
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-
-          <button 
-            style={{...s.btn, opacity: loading ? 0.5 : 1}} 
-            type="submit" 
-            disabled={loading}
-          >
-            {loading ? 'Registering...' : 'Sign Up'}
-          </button>
-        </form>
-
-        <p style={{ textAlign: 'center', marginTop: '20px', fontSize: '14px', color: 'rgba(255,255,255,0.5)' }}>
-          Already have an account? 
-          <span 
-            onClick={() => navigate('/login')} 
-            style={{ color: '#ec4899', cursor: 'pointer', marginLeft: '5px' }}
-          >
-            Log In
+    <AuthLayout
+      heroTitlePrefix="Join"
+      heroAccent="Muzeer"
+      heroText="Create your account to build playlists, discover fresh tracks, and keep your music with you."
+      heroPills={['Personal playlists', 'Discover weekly', 'Save favorites']}
+      cardTitle="Create account"
+      cardSubtitle="Fill in your details to get started."
+      error={error}
+      heroTextMaxWidth="360px"
+      footer={(
+        <div style={styles.helper}>
+          <span>Already have an account?</span>
+          <span style={styles.link} onClick={() => navigate('/login')}>
+            Sign in
           </span>
-        </p>
-      </div>
-    </div>
+        </div>
+      )}
+    >
+          <form onSubmit={handleRegister} style={styles.form}>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Username</label>
+              <input
+                style={styles.input}
+                type="text"
+                placeholder="CoolListener123"
+                value={userName}
+                onChange={(e) => setUserName(e.target.value)}
+                required
+              />
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Email</label>
+              <input
+                style={styles.input}
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Password</label>
+              <input
+                style={styles.input}
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+
+            <button
+              style={{ ...styles.button, opacity: loading ? 0.5 : 1 }}
+              className="auth-button"
+              type="submit"
+              disabled={loading}
+            >
+              {loading ? 'Registering...' : 'Sign Up'}
+            </button>
+          </form>
+    </AuthLayout>
   );
 }
