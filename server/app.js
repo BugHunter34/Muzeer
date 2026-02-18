@@ -12,6 +12,11 @@ var usersRouter = require('./routes/users');
 var authRoutes = require('./routes/login'); // This handles login AND register
 var app = express();
 
+const authMiddleware = require('./middleware/auth'); // Check path if needed
+
+// The Heartbeat endpoint
+
+
 // --- CORS CONFIGURATION ---
 const allowedOrigins = [
   'http://localhost:5173', 
@@ -61,7 +66,10 @@ app.use('/api/admin', require('./routes/admin'));
 // This means all routes in 'routes/login.js' will start with /api/auth
 app.use('/api/auth', authRoutes); 
 
-
+app.get('/api/auth/verify', authMiddleware, (req, res) => {
+  // If the auth middleware passes, they are still alive!
+  res.status(200).json({ message: "User is alive" });
+});
 
 // --- ERROR HANDLING ---
 // Catch 404 and forward to error handler

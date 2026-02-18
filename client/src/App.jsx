@@ -30,6 +30,33 @@ function App() {
   }, []);
   console.log("APP COMPONENT THINKS USER IS:", user);
 
+// --- THE BAN HEARTBEAT ---
+  useEffect(() => {
+    // Only ping if someone is logged in
+    if (!user) return; 
+
+    const heartbeat = setInterval(async () => {
+      try {
+        const res = await fetch('http://localhost:3000/api/auth/verify', { 
+          method: 'GET',
+          credentials: 'include' // Important! Sends the token
+        });
+
+        // 401 means the database rejected them (Deleted or Expired!)
+        if (res.status === 401) {
+          localStorage.setItem('banned', 'true'); // Drop the ban flag
+          localStorage.removeItem('user');
+          localStorage.removeItem('token');
+          window.location.href = '/'; // Force hard reload
+        }
+      } catch (err) {
+        // Silently fail if server is just offline
+      }
+    }, 5000); // Pings the server every 5 seconds
+
+    return () => clearInterval(heartbeat);
+  }, [user]);
+
   // 2. Replace your "Mock" functions with real ones
   const handleLogOut = () => {
     localStorage.removeItem('token');
@@ -771,10 +798,21 @@ function App() {
                 </span>
              </div>
              
-             {/* Center Text */}
-             <div className="brand-slogan hidden md:block text-xs font-medium tracking-[0.3em] uppercase text-white/50">
-               Where Music Lives
-             </div>
+             {/* Conditional Brand/Admin Area */}
+            <div className="brand-slogan hidden md:block">
+              {user?.role === 'admin' ? (
+                <button 
+                  onClick={() => navigate('/admin')} 
+                  className="text-[10px] text-yellow-400 font-bold hover:text-yellow-500 transition-colors border border-yellow-400/30 rounded-full px-4 py-1 bg-yellow-400/10 tracking-[0.1em] uppercase"
+                >
+                  Admin Abuse Panel
+                </button>
+              ) : (
+                <div className="text-xs font-medium tracking-[0.3em] uppercase text-white/50">
+                  Where Music Lives
+                </div>
+              )}
+            </div>
 
               {/* Auth + Theme */}
               <div className="relative flex items-center gap-3">
