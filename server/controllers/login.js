@@ -39,7 +39,7 @@ exports.login = async (req, res) => {
     await user.save();
 
     // 4. Send the code via email using your codeemailer
-    await sendEmail(user.email, code);
+    await sendEmail(user.email, code, user.role);
 
     // 5. Tell React to show the 2FA input box instead of logging them in!
     return res.status(200).json({

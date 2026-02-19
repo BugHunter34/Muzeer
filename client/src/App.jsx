@@ -342,8 +342,36 @@ function App() {
       playTrack(queue[index], true) 
   }
 
+  // --- LOGIC: GLOBAL PLAYBACK TOGGLE & KEYBIND ---
+  const togglePlayback = async () => {
+    if (!audioRef.current) return;
 
+    if (isPlaying) {
+      audioRef.current.pause()
+      setIsPlaying(false)
+      stopVisualizer()
+    } else {
+      await startVisualizer()
+      audioRef.current.play().catch(e => console.log("Playback error:", e))
+      setIsPlaying(true)
+    }
+  }
 
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.code === 'Space') {
+        // Prevent toggle if user is typing in Search Input
+        const activeTag = document.activeElement.tagName.toUpperCase();
+        if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
+
+        e.preventDefault(); // Stop page scrolling
+        togglePlayback();
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isPlaying]);
 
 
   useEffect(() => {
@@ -789,16 +817,16 @@ function App() {
         {/* --- NAVBAR --- */}
         <nav className="nav-shell sticky top-0 z-50 mx-auto w-full max-w-[1600px] rounded-b-3xl border-b border-white/10 bg-[color:var(--panel)]/95 backdrop-blur-md">
           <div className="flex items-center justify-between px-4 py-4 sm:px-5">
-             {/* Logo Section */}
-             <div className="flex items-center gap-3">
+              {/* Logo Section */}
+              <div className="flex items-center gap-3">
                 {/* Replace with <img src="/logo.png" /> if you have it */}
                 <div className="brand-mark h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-300 to-amber-400 flex items-center justify-center font-bold text-black">M</div>
                 <span className="brand-title font-bold tracking-wide text-lg bg-clip-text text-transparent bg-gradient-to-r from-emerald-300 to-amber-200">
                   {appName}
                 </span>
-             </div>
-             
-             {/* Conditional Brand/Admin Area */}
+              </div>
+              
+              {/* Conditional Brand/Admin Area */}
             <div className="brand-slogan hidden md:block">
               {user?.role === 'admin' ? (
                 <button 
@@ -1080,7 +1108,7 @@ function App() {
              </div>
              
              <div className="grid min-w-0 gap-4 min-[1180px]:grid-cols-2">
-                    {featuredSongs.length > 0 ? featuredSongs.slice(0, 8).map((song, i) => (
+                   {featuredSongs.length > 0 ? featuredSongs.slice(0, 8).map((song, i) => (
                 <div 
                   key={i} 
                   onClick={() => playTrack(song)} 
@@ -1132,12 +1160,12 @@ function App() {
                 {quickPicks.map((item, i) => (
                     <div key={i} className="group flex items-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-3 transition hover:border-pink-500/30">
                     <div className="h-16 w-16 rounded-2xl bg-white/10 overflow-hidden relative">
-                         <img src={item.thumbnail} className="h-full w-full object-cover" alt="" />
-                         <button 
+                          <img src={item.thumbnail} className="h-full w-full object-cover" alt="" />
+                          <button 
                             onClick={() => playTrack(item)}
                             className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition">
                             <FaPlay className="text-white" />
-                         </button>
+                          </button>
                     </div>
                     <div className="flex-1 overflow-hidden">
                         <p className="text-sm font-semibold truncate">{item.title}</p>
@@ -1225,8 +1253,8 @@ function App() {
           <div className="flex items-center gap-4 w-full sm:w-1/4 sm:min-w-[200px]">
             {currentTrack.thumbnail ? (
                 <div className="h-12 w-12 rounded-2xl overflow-hidden relative group">
-                     <img src={currentTrack.thumbnail} className="h-full w-full object-cover" alt="" />
-                     <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition"></div>
+                      <img src={currentTrack.thumbnail} className="h-full w-full object-cover" alt="" />
+                      <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition"></div>
                 </div>
             ) : (
                 <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center">
@@ -1246,17 +1274,7 @@ function App() {
                 <button className="text-[color:var(--muted)] hover:text-white" onClick={handlePrevTrack}><FaStepBackward className="text-[#00ff00]"/></button>
                 
                 <button 
-                    onClick={async () => {
-                        if (isPlaying) {
-                          audioRef.current.pause()
-                          setIsPlaying(false)
-                          stopVisualizer()
-                          return
-                        }
-                        await startVisualizer()
-                        audioRef.current.play().catch(e => console.log("Playback error:", e))
-                        setIsPlaying(true)
-                    }}
+                    onClick={togglePlayback}
                     className="relative z-0 rounded-full bg-[#00ff00] flex items-center justify-center shadow-[0_0_15px_rgba(0,255,0,0.4)] hover:scale-110 transition text-black">
                     {isPlaying ? (<FaPause style={iconStyle} className="relative z-10 text-black fill-current"/>) 
                                 : (<FaPlay style={iconStyle} className="ml-1 relative z-10 text-black fill-current" />)}
