@@ -1,24 +1,75 @@
-import React, { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 export default function Profile() {
   const navigate = useNavigate();
-  const token = localStorage.getItem('token');
+  
+  const hasAttemptedLink = React.useRef(false);
+  // --- Magic Link Hooks ---
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [linkStatus, setLinkStatus] = useState(null); 
 
-  // 1. Safely read the user data
+  const token = localStorage.getItem('token');
   const savedUser = localStorage.getItem('user');
   const userData = savedUser ? JSON.parse(savedUser) : null;
-
-  // 2. THE FIX: Use optional chaining (?.) and OR (||) 
-  // If userData exists but userName is missing, it safely falls back to 'User'
   const userName = userData?.userName || 'User';
   const email = userData?.email || 'No email provided';
 
+  // --- Redirect if not logged in ---
   useEffect(() => {
     if (!token) {
       navigate('/login');
     }
   }, [token, navigate]);
+
+  // --- The Magic Link Catcher ---
+  useEffect(() => {
+    const discordIdFromUrl = searchParams.get('discordId');
+    const discordNameFromUrl = searchParams.get('discordName');
+
+    if (discordIdFromUrl && token) {
+      // 1. THE LOOP KILLER: Instantly wipe the URL clean without triggering a React re-render
+      window.history.replaceState(null, '', '/profile');
+
+      setLinkStatus({ type: 'loading', text: 'Linking your Discord account...' });
+
+      // 2. THE 404 FIX: Point to the new /api/bot route
+      fetch('http://localhost:3000/api/bot/link-discord', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
+        credentials: 'include',
+        body: JSON.stringify({ 
+          discordId: discordIdFromUrl, 
+          discordName: discordNameFromUrl 
+        })
+      })
+      .then(res => {
+        if (!res.ok) throw new Error("Server returned " + res.status);
+        return res.json();
+      })
+      .then(data => {
+        if (data.success) {
+          setLinkStatus({ type: 'success', text: 'Discord account linked successfully!' });
+          
+          const updatedUser = { 
+            ...userData, 
+            discordId: discordIdFromUrl, 
+            discordName: discordNameFromUrl 
+          };
+          localStorage.setItem('user', JSON.stringify(updatedUser));
+        } else {
+          setLinkStatus({ type: 'error', text: 'Failed to link Discord.' });
+        }
+      })
+      .catch(err => {
+        console.error("Linking error:", err);
+        setLinkStatus({ type: 'error', text: 'Server error while linking.' });
+      });
+    }
+  }, [searchParams, token]);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -26,9 +77,7 @@ export default function Profile() {
     navigate('/login');
   };
 
-  if (!token) {
-    return null;
-  }
+  if (!token) return null;
 
   return (
     <div
@@ -83,6 +132,30 @@ export default function Profile() {
           </button>
         </div>
 
+        {/* --- Dynamic Status Banner --- */}
+        {linkStatus && (
+          <div style={{
+            marginTop: '20px',
+            padding: '12px 16px',
+            borderRadius: '12px',
+            fontSize: '14px',
+            fontWeight: 600,
+            background: linkStatus.type === 'success' ? 'rgba(34, 197, 94, 0.15)' : 
+                        linkStatus.type === 'error' ? 'rgba(239, 68, 68, 0.15)' : 
+                        'rgba(255, 255, 255, 0.1)',
+            border: `1px solid ${
+                        linkStatus.type === 'success' ? 'rgba(34, 197, 94, 0.4)' : 
+                        linkStatus.type === 'error' ? 'rgba(239, 68, 68, 0.4)' : 
+                        'rgba(255, 255, 255, 0.2)'}`,
+            color: linkStatus.type === 'success' ? '#4ade80' : 
+                   linkStatus.type === 'error' ? '#f87171' : 
+                   '#fff'
+          }}>
+            {linkStatus.type === 'loading' && '⏳ '}
+            {linkStatus.text}
+          </div>
+        )}
+
         <div style={{ marginTop: '22px', display: 'grid', gridTemplateColumns: '1.1fr 0.9fr', gap: '16px' }}>
           <div
             style={{
@@ -107,7 +180,7 @@ export default function Profile() {
                   fontSize: '20px'
                 }}
               >
-                {userName ? userName.charAt(0) : 'U'}
+                {userName ? userName.charAt(0).toUpperCase() : 'U'}
               </div>
               <div>
                 <h2 style={{ margin: 0, fontSize: '20px' }}>{userName}</h2>
@@ -122,10 +195,30 @@ export default function Profile() {
                 <p style={{ margin: 0, color: 'rgba(255,255,255,0.58)', fontSize: '12px' }}>Email</p>
                 <p style={{ margin: '3px 0 0 0' }}>{token ? email : '—'}</p>
               </div>
+              
               <div style={{ borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', padding: '10px 12px' }}>
                 <p style={{ margin: 0, color: 'rgba(255,255,255,0.58)', fontSize: '12px' }}>Plan</p>
                 <p style={{ margin: '3px 0 0 0' }}>Free</p>
               </div>
+
+              {/* --- NEW: DISCORD CONNECTION UI --- */}
+              <div style={{ 
+                borderRadius: '12px', 
+                border: '1px solid rgba(88, 101, 242, 0.4)', 
+                background: 'rgba(88, 101, 242, 0.1)',
+                padding: '10px 12px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <div>
+                  <p style={{ margin: 0, color: 'rgba(255,255,255,0.7)', fontSize: '12px' }}>Discord Connection</p>
+                  <p style={{ margin: '3px 0 0 0', fontWeight: 'bold', color: '#5865F2' }}>
+                    {userData?.discordName ? `@${userData.discordName}` : 'Not linked'}
+                  </p>
+                </div>
+              </div>
+
             </div>
           </div>
 

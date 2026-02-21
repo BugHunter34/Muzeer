@@ -5,4 +5,7 @@ flask-cors
 requests
 urllib3
 pymongo
-bcrypt
+discord.py 
+motor 
+python-dotenv
+aiohttp

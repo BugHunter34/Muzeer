@@ -16,6 +16,7 @@ const friends = [
   { name: 'Mira', track: 'Light Trails', artist: 'Glasswave' },
 ]
 
+
 function App() {
   const [appName] = useState('Muzeer') 
   const navigate = useNavigate();
@@ -28,7 +29,63 @@ function App() {
       setUser(JSON.parse(savedUser));
     }
   }, []);
-  console.log("APP COMPONENT THINKS USER IS:", user);
+
+  /*useEffect(() => {
+    console.log("APP COMPONENT THINKS USER IS:", user);
+  }, [user]);*/
+
+
+// --- Data State ---
+const [query, setQuery] = useState('')
+const [searchResults, setSearchResults] = useState([])
+const [visibleSearchCount, setVisibleSearchCount] = useState(0)
+const [searchProgress, setSearchProgress] = useState(0)
+const [searchProgressTarget, setSearchProgressTarget] = useState(0)
+const [isSearchResultsOpen, setIsSearchResultsOpen] = useState(false)
+const [featuredSongs, setFeaturedSongs] = useState([]) // Trending
+const [quickPicks, setQuickPicks] = useState([]) // Most Played
+const [loading, setLoading] = useState(false)
+
+// --- Theme State ---
+const [themeOpen, setThemeOpen] = useState(false)
+const [accentStart, setAccentStart] = useState('#3bf0d1')
+const [accentEnd, setAccentEnd] = useState('#ffb454')
+const [speakerGlow, setSpeakerGlow] = useState('#3bf0d1')
+const [intensity, setIntensity] = useState(1)
+
+// --- Playlist & Queue State ---
+const [playlists, setPlaylists] = useState(['Daily Mix 1', 'Chill Focus', 'Pinkwave Essentials']) 
+const [queue, setQueue] = useState([])
+const [queueIndex, setQueueIndex] = useState(0)
+
+// --- Audio Player State ---
+
+const audioRef = useRef(null);
+  if (!audioRef.current) {
+    audioRef.current = new Audio();
+    audioRef.current.crossOrigin = "anonymous"; 
+  }
+const ambienceRef = useRef(null)
+const wavesRef = useRef(null)
+const audioContextRef = useRef(null)
+const analyserRef = useRef(null)
+const dataArrayRef = useRef(null)
+const sourceNodeRef = useRef(null)
+const rafRef = useRef(null)
+const searchRevealTimerRef = useRef(null)
+const searchFetchProgressTimerRef = useRef(null)
+const searchFinalizeProgressTimerRef = useRef(null)
+const searchSmoothProgressTimerRef = useRef(null)
+const [isPlaying, setIsPlaying] = useState(false)
+const [volume, setVolume] = useState(0.5) 
+const [currentTime, setCurrentTime] = useState(0)
+const [duration, setDuration] = useState(0)
+const [currentTrack, setCurrentTrack] = useState({
+  title: 'Select a track',
+  artist: '...',
+  thumbnail: null,
+  audio_url: null
+})
 
 // --- THE BAN HEARTBEAT ---
   useEffect(() => {
@@ -49,13 +106,44 @@ function App() {
           localStorage.removeItem('token');
           window.location.href = '/'; // Force hard reload
         }
+        else if (res.status === 404){
+          console.log("Can't connect to server")
+          alert("You're offline")
+        }
       } catch (err) {
         // Silently fail if server is just offline
       }
-    }, 5000); // Pings the server every 5 seconds
+    }, 10000); // Pings the server every 5 seconds
 
     return () => clearInterval(heartbeat);
   }, [user]);
+
+// --- Current listent HEARTBEAT ---
+useEffect(() => {
+  if (!user || !isPlaying || !currentTrack.title) return;
+
+  
+  const presenceSync = setInterval(async () => {
+    try {
+      await fetch('http://localhost:3000/api/me/presence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // Send cookies/token so the server knows WHO is updating
+        credentials: 'include', 
+        body: JSON.stringify({
+          title: currentTrack.title,
+          artist: currentTrack.artist,
+          webpage_url: currentTrack.webpage_url,
+          currentTime: audioRef.current.currentTime
+        })
+      });
+    } catch (err) {
+      console.error("Failed to sync presence", err);
+    }
+  }, 10000); // update every 10s
+
+  return () => clearInterval(presenceSync);
+}, [user, isPlaying, currentTrack]);
 
   // 2. Replace your "Mock" functions with real ones
   const handleLogOut = () => {
@@ -69,56 +157,13 @@ function App() {
   // null = guest, object = logged in. Toggle this to see 'My Account'
 
 
-  // --- Data State ---
-  const [query, setQuery] = useState('')
-  const [searchResults, setSearchResults] = useState([])
-  const [visibleSearchCount, setVisibleSearchCount] = useState(0)
-  const [searchProgress, setSearchProgress] = useState(0)
-  const [searchProgressTarget, setSearchProgressTarget] = useState(0)
-  const [isSearchResultsOpen, setIsSearchResultsOpen] = useState(false)
-  const [featuredSongs, setFeaturedSongs] = useState([]) // Trending
-  const [quickPicks, setQuickPicks] = useState([]) // Most Played
-  const [loading, setLoading] = useState(false)
 
-  // --- Theme State ---
-  const [themeOpen, setThemeOpen] = useState(false)
-  const [accentStart, setAccentStart] = useState('#3bf0d1')
-  const [accentEnd, setAccentEnd] = useState('#ffb454')
-  const [speakerGlow, setSpeakerGlow] = useState('#3bf0d1')
-  const [intensity, setIntensity] = useState(1)
-  
-  // --- Playlist & Queue State ---
-  const [playlists, setPlaylists] = useState(['Daily Mix 1', 'Chill Focus', 'Pinkwave Essentials']) 
-  const [queue, setQueue] = useState([])
-  const [queueIndex, setQueueIndex] = useState(0)
 
-  // --- Audio Player State ---
-  const audioRef = useRef(new Audio())
-  const ambienceRef = useRef(null)
-  const wavesRef = useRef(null)
-  const audioContextRef = useRef(null)
-  const analyserRef = useRef(null)
-  const dataArrayRef = useRef(null)
-  const sourceNodeRef = useRef(null)
-  const rafRef = useRef(null)
-  const searchRevealTimerRef = useRef(null)
-  const searchFetchProgressTimerRef = useRef(null)
-  const searchFinalizeProgressTimerRef = useRef(null)
-  const searchSmoothProgressTimerRef = useRef(null)
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [volume, setVolume] = useState(0.5) 
-  const [currentTime, setCurrentTime] = useState(0)
-  const [duration, setDuration] = useState(0)
-  const [currentTrack, setCurrentTrack] = useState({
-    title: 'Select a track',
-    artist: '...',
-    thumbnail: null,
-    audio_url: null
-  })
 
-  // --- INITIAL DATA FETCH ---
+// ---------------------------------------------------------
+  // 1. INITIAL APP LOAD (Runs exactly ONCE when you open Muzeer)
+  // ---------------------------------------------------------
   useEffect(() => {
-    // 1. Fetch Trending
     const fetchTrending = async () => {
       try {
         const res = await fetch('http://localhost:5000/api/trending')
@@ -126,46 +171,83 @@ function App() {
         setFeaturedSongs(data)
       } catch (e) { console.error("Trending fetch error", e) }
     }
-    fetchTrending()
+    
+    fetchTrending();
+    loadQuickPicks();
+  }, []); // <-- Only do this on startup (empty)
 
-    // 2. Load "Most Played"
-    loadQuickPicks()
 
-    // 3. Audio Listeners
-    const audio = audioRef.current
-    audio.crossOrigin = 'anonymous'
-    const updateTime = () => setCurrentTime(audio.currentTime)
-    const updateDuration = () => setDuration(audio.duration)
-    const onEnded = () => handleNextTrack()
-
-    audio.addEventListener('timeupdate', updateTime)
-    audio.addEventListener('loadedmetadata', updateDuration)
-    audio.addEventListener('ended', onEnded)
-    audio.volume = volume
-
-    return () => {
-      if (searchRevealTimerRef.current) {
-        clearInterval(searchRevealTimerRef.current)
-      }
-      if (searchFetchProgressTimerRef.current) {
-        clearInterval(searchFetchProgressTimerRef.current)
-      }
-      if (searchFinalizeProgressTimerRef.current) {
-        clearInterval(searchFinalizeProgressTimerRef.current)
-      }
-      if (searchSmoothProgressTimerRef.current) {
-        clearInterval(searchSmoothProgressTimerRef.current)
-      }
-      audio.removeEventListener('timeupdate', updateTime)
-      audio.removeEventListener('loadedmetadata', updateDuration)
-      audio.removeEventListener('ended', onEnded)
-      stopVisualizer()
-      if (audioContextRef.current) {
-        audioContextRef.current.close()
-        audioContextRef.current = null
-      }
+  // ---------------------------------------------------------
+  // 2. VOLUME CONTROLLER (Runs ONLY when you drag the volume slider)
+  // ---------------------------------------------------------
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume;
     }
-  }, [])
+  }, [volume]); // <-- Only listens to volume changes
+
+
+  // ---------------------------------------------------------
+  // 3. AUDIO ENGINE & DISCORD PRESENCE (Runs ONLY when track changes)
+  // ---------------------------------------------------------
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    
+    audio.crossOrigin = 'anonymous';
+
+    // Discord Presence Sync
+    const updatePresence = (playing) => {
+      if (!currentTrack || !currentTrack.title || currentTrack.title === 'Select a track') return;
+      
+      fetch('http://localhost:3000/api/auth/presence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          title: currentTrack.title,
+          artist: currentTrack.artist,
+          webpage_url: currentTrack.webpage_url,
+          isPlaying: playing,
+          offset: audio.currentTime 
+        })
+      }).catch(err => console.log("Presence sync failed", err));
+    };
+
+    // Standard audio events
+    const updateTime = () => setCurrentTime(audio.currentTime);
+    const updateDuration = () => setDuration(audio.duration);
+    const onEnded = () => handleNextTrack();
+
+    const onPlay = () => updatePresence(true);
+    const onPause = () => updatePresence(false);
+    const onSeeked = () => updatePresence(true);
+
+    // Add Listeners
+    audio.addEventListener('timeupdate', updateTime);
+    audio.addEventListener('loadedmetadata', updateDuration);
+    audio.addEventListener('ended', onEnded);
+    audio.addEventListener('play', onPlay);
+    audio.addEventListener('pause', onPause);
+    audio.addEventListener('seeked', onSeeked);
+
+    // Cleanup when song changes or app closes
+    return () => {
+      audio.removeEventListener('timeupdate', updateTime);
+      audio.removeEventListener('loadedmetadata', updateDuration);
+      audio.removeEventListener('ended', onEnded);
+      audio.removeEventListener('play', onPlay);
+      audio.removeEventListener('pause', onPause);
+      audio.removeEventListener('seeked', onSeeked);
+      
+      if (searchRevealTimerRef.current) clearInterval(searchRevealTimerRef.current);
+      if (searchFetchProgressTimerRef.current) clearInterval(searchFetchProgressTimerRef.current);
+      if (searchFinalizeProgressTimerRef.current) clearInterval(searchFinalizeProgressTimerRef.current);
+      if (searchSmoothProgressTimerRef.current) clearInterval(searchSmoothProgressTimerRef.current);
+      
+      stopVisualizer();
+    }
+  }, [currentTrack]);
 
 
   // --- LOGIC: LOCAL PLAY COUNT ---
@@ -216,30 +298,35 @@ function App() {
     }
   }
 
-  const setupAudioGraph = () => {
-    if (audioContextRef.current) return
-    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext
-    if (!AudioContextConstructor) return
+const setupAudioGraph = () => {
+    if (audioContextRef.current) return;
+    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextConstructor) return;
+    
     try {
-      const ctx = new AudioContextConstructor()
-      const analyser = ctx.createAnalyser()
-      analyser.fftSize = 256
-      const source = ctx.createMediaElementSource(audioRef.current)
-      source.connect(analyser)
-      analyser.connect(ctx.destination)
-      audioContextRef.current = ctx
-      analyserRef.current = analyser
-      sourceNodeRef.current = source
-      dataArrayRef.current = new Uint8Array(analyser.frequencyBinCount)
+      const ctx = new AudioContextConstructor();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+
+      let source = sourceNodeRef.current;
+      if (!source) {
+        source = ctx.createMediaElementSource(audioRef.current);
+        sourceNodeRef.current = source;
+      }
+
+      // CRITICAL FIX: Disconnect the source from any ghost contexts before reconnecting
+      try { source.disconnect(); } catch (e) {} 
+      
+      source.connect(analyser);
+      analyser.connect(ctx.destination);
+      
+      audioContextRef.current = ctx;
+      analyserRef.current = analyser;
+      dataArrayRef.current = new Uint8Array(analyser.frequencyBinCount);
     } catch (err) {
-      console.warn('Audio graph setup failed:', err)
-      audioContextRef.current = null
-      analyserRef.current = null
-      sourceNodeRef.current = null
-      dataArrayRef.current = null
+      console.warn('Audio graph setup safely skipped:', err.message);
     }
   }
-
   const updateVisualizer = () => {
     const analyser = analyserRef.current
     const dataArray = dataArrayRef.current
@@ -291,6 +378,11 @@ function App() {
   }
 
   const playTrack = async (track, isNewPlay = true) => {
+
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+    
     let streamUrl = track.proxy_url || track.audio_url
 
     // Fetch stream if missing (e.g. from Trending/History list)
@@ -311,14 +403,14 @@ function App() {
 
     if (!streamUrl) return
     
-    if (isNewPlay) {
-        recordPlay(track)
-    }
-
+if (isNewPlay) recordPlay(track)
     applyThemeFromImage(track.thumbnail, track)
-
     setCurrentTrack(track)
+
+    // 2. Set the new source AND force the browser to load it
     audioRef.current.src = streamUrl
+    audioRef.current.load()
+
     try {
       await audioRef.current.play()
       setIsPlaying(true)
@@ -408,66 +500,27 @@ function App() {
     }
   }, [searchProgressTarget])
 
-  useEffect(() => {
+useEffect(() => {
     const pendingTrackRaw = localStorage.getItem('pendingTrack')
     if (!pendingTrackRaw) return
-
-    let retryHandlersAttached = false
-    let retryTrack = null
-    let clearPendingTimeout = null
-
-    const schedulePendingClear = () => {
-      if (clearPendingTimeout) {
-        clearTimeout(clearPendingTimeout)
-      }
-      clearPendingTimeout = setTimeout(() => {
-        localStorage.removeItem('pendingTrack')
-      }, 1500)
-    }
-
-    const clearRetryHandlers = () => {
-      if (!retryHandlersAttached) return
-      window.removeEventListener('pointerdown', retryPlayback)
-      window.removeEventListener('keydown', retryPlayback)
-      retryHandlersAttached = false
-    }
-
-    const retryPlayback = async () => {
-      if (!retryTrack) return
-      const played = await playTrack(retryTrack)
-      if (played) {
-        schedulePendingClear()
-        clearRetryHandlers()
-      }
-    }
 
     try {
       const pendingTrack = JSON.parse(pendingTrackRaw)
       if (pendingTrack) {
-        retryTrack = pendingTrack
+        // Try to resume the track once on load
         playTrack(pendingTrack).then((played) => {
           if (played) {
-            schedulePendingClear()
-            return
-          }
-          if (!retryHandlersAttached) {
-            window.addEventListener('pointerdown', retryPlayback)
-            window.addEventListener('keydown', retryPlayback)
-            retryHandlersAttached = true
+            // Autoplay succeeded, clean up storage
+            localStorage.removeItem('pendingTrack')
+          } else {
+            // Autoplay was blocked by the browser. 
+            // We clear it to prevent ghost states, letting the user click 'Play' manually.
+            localStorage.removeItem('pendingTrack')
           }
         })
-      } else {
-        localStorage.removeItem('pendingTrack')
       }
     } catch {
       localStorage.removeItem('pendingTrack')
-    }
-
-    return () => {
-      if (clearPendingTimeout) {
-        clearTimeout(clearPendingTimeout)
-      }
-      clearRetryHandlers()
     }
   }, [])
 
@@ -1000,7 +1053,7 @@ function App() {
             </div>
             
             <form onSubmit={handleSearch} className="flex w-full items-center gap-3 relative group sm:w-auto">
-                <FaSearch className="absolute left-4 text-white/30 group-focus-within:text-pink-500" />
+                <FaSearch className="absolute right-5  text-white/30 group-focus-within:text-pink-500" />
                 <input
                   id="landing-search-input"
                   type="text"

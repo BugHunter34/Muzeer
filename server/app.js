@@ -20,7 +20,7 @@ const authMiddleware = require('./middleware/auth'); // Check path if needed
 // --- CORS CONFIGURATION ---
 const allowedOrigins = [
   'http://localhost:5173', 
-  'https://evocative-fransisca-bootlessly.ngrok-free.dev'
+  //'https://evocative-fransisca-bootlessly.ngrok-free.dev'
 ];
 
 // --- DATABASE CONNECTION ---
@@ -61,6 +61,9 @@ app.use(cors({
 app.use('/', indexRouter);
 app.use('/users', usersRouter);
 app.use('/api/admin', require('./routes/admin'));
+
+// Mount the bot router
+app.use('/api/bot', require('./routes/bot'));
 
 // Mount the Auth Router
 // This means all routes in 'routes/login.js' will start with /api/auth
