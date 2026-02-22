@@ -20,6 +20,7 @@ const sendVerifyEmail = async (to, userName, verifyLink) => {
     to: to,
     subject: 'Muzeer - Verify Your Account',
     html: `
+<<<<<<< HEAD
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f6fb;padding:36px 12px;font-family:Arial,sans-serif;">
         <tr>
           <td align="center">
@@ -62,6 +63,21 @@ const sendVerifyEmail = async (to, userName, verifyLink) => {
           </td>
         </tr>
       </table>
+=======
+      <div style="font-family: Arial, sans-serif; text-align: center; padding: 40px 20px; background-color: #02021a; color: white; border-radius: 10px;">
+        <h1 style="color: #facc15; margin-bottom: 5px;">Welcome to Muzeer!</h1>
+        <h3 style="color: #ec4899; margin-top: 0;">Hello, ${userName}</h3>
+        <p style="color: rgba(255,255,255,0.7); font-size: 16px; margin-bottom: 30px;">
+          Your curated soundtrack is almost ready. Please verify your email to unlock your account.
+        </p>
+        <a href="${verifyLink}" style="background-color: #ec4899; color: #02021a; text-decoration: none; padding: 14px 28px; border-radius: 8px; font-weight: bold; font-size: 16px; display: inline-block; transition: 0.3s;">
+          Verify My Account
+        </a>
+        <p style="color: rgba(255,255,255,0.3); font-size: 12px; margin-top: 40px;">
+          If you didn't request this, you can safely ignore this email.
+        </p>
+      </div>
+>>>>>>> fb5857508b30a2cd769dbd755c5fcc7f733437b9
     `
   };
 
