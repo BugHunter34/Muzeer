@@ -6,6 +6,19 @@ export default function AdminAbuse() {
   const navigate = useNavigate();
   const [users, setUsers] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [tokenAmountByUser, setTokenAmountByUser] = useState({});
+  const [tokenUpdatingUserId, setTokenUpdatingUserId] = useState('');
+  const [tokenActions, setTokenActions] = useState([]);
+  const [tokenControl, setTokenControl] = useState({
+    symbol: 'MUZR',
+    qualifiedSecondsPerToken: 180,
+    maxSecondsPerEvent: 60,
+    maxDailyQualifiedSeconds: 7200,
+    minTrackEventIntervalSeconds: 8,
+    rewardsPaused: false,
+    allowAdminMintBurn: true
+  });
+  const [savingTokenControl, setSavingTokenControl] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -28,9 +41,92 @@ export default function AdminAbuse() {
     }
   };
 
+  const fetchTokenActions = async () => {
+    try {
+      const response = await fetch('http://localhost:3000/api/admin/token-actions', {
+        method: 'GET',
+        credentials: 'include'
+      });
+
+      const data = await response.json();
+      if (!response.ok) return;
+
+      setTokenActions(Array.isArray(data) ? data : []);
+    } catch (err) {
+    }
+  };
+
+  const fetchTokenControl = async () => {
+    try {
+      const response = await fetch('http://localhost:3000/api/admin/token-control', {
+        method: 'GET',
+        credentials: 'include'
+      });
+
+      const data = await response.json();
+      if (!response.ok) return;
+
+      setTokenControl((prev) => ({
+        ...prev,
+        ...data
+      }));
+    } catch (err) {
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
+    fetchTokenActions();
+    fetchTokenControl();
   }, []);
+
+  const updateTokenControlField = (field, value) => {
+    setTokenControl((prev) => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const saveTokenControl = async () => {
+    try {
+      setSavingTokenControl(true);
+      const payload = {
+        symbol: String(tokenControl.symbol || 'MUZR').toUpperCase(),
+        qualifiedSecondsPerToken: Number(tokenControl.qualifiedSecondsPerToken),
+        maxSecondsPerEvent: Number(tokenControl.maxSecondsPerEvent),
+        maxDailyQualifiedSeconds: Number(tokenControl.maxDailyQualifiedSeconds),
+        minTrackEventIntervalSeconds: Number(tokenControl.minTrackEventIntervalSeconds),
+        rewardsPaused: Boolean(tokenControl.rewardsPaused),
+        allowAdminMintBurn: Boolean(tokenControl.allowAdminMintBurn)
+      };
+
+      const response = await fetch('http://localhost:3000/api/admin/token-control', {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      let data = null;
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok) {
+        alert(data?.message || `Failed to update token control (HTTP ${response.status})`);
+        return;
+      }
+
+      setTokenControl((prev) => ({ ...prev, ...(data.control || {}) }));
+      alert('Token control updated');
+    } catch (err) {
+      alert('Server error while updating token control');
+    } finally {
+      setSavingTokenControl(false);
+    }
+  };
 
   // 2. Handle Promote/Demote
   const toggleRole = async (userId) => {
@@ -70,6 +166,83 @@ export default function AdminAbuse() {
     }
   };
 
+  const setTokenAmountForUser = (userId, value) => {
+    setTokenAmountByUser((prev) => ({
+      ...prev,
+      [userId]: value
+    }));
+  };
+
+  const adjustUserTokens = async (userId, direction) => {
+    const rawValue = tokenAmountByUser[userId] ?? '1';
+    const parsedAmount = Number(rawValue);
+
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      alert('Enter a valid positive token amount.');
+      return;
+    }
+
+    const amount = Math.floor(parsedAmount);
+    const delta = direction === 'mint' ? amount : -amount;
+
+    try {
+      setTokenUpdatingUserId(userId);
+      const res = await fetch(`http://localhost:3000/api/admin/users/${userId}/token`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ delta })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.message || 'Failed to adjust tokens');
+        return;
+      }
+
+      fetchUsers();
+      fetchTokenActions();
+    } catch (err) {
+      alert('Server error while adjusting tokens');
+    } finally {
+      setTokenUpdatingUserId('');
+    }
+  };
+
+  const setUserTokenBalance = async (userId) => {
+    const rawValue = tokenAmountByUser[userId] ?? '0';
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      alert('Enter a valid non-negative balance.');
+      return;
+    }
+
+    const balance = Math.floor(parsed);
+
+    try {
+      setTokenUpdatingUserId(userId);
+      const res = await fetch(`http://localhost:3000/api/admin/users/${userId}/token`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ balance })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.message || 'Failed to set user token balance');
+        return;
+      }
+
+      fetchUsers();
+      fetchTokenActions();
+    } catch (err) {
+      alert('Server error while setting token balance');
+    } finally {
+      setTokenUpdatingUserId('');
+    }
+  };
+
   // 4. Real-time Search Filter
   const filteredUsers = users.filter(u => 
     u.userName?.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -77,7 +250,7 @@ export default function AdminAbuse() {
   );
 
   return (
-    <div className="min-h-screen w-full bg-[radial-gradient(circle_at_8%_18%,rgba(48,214,197,0.18),transparent_42%),radial-gradient(circle_at_78%_15%,rgba(255,180,84,0.16),transparent_46%),radial-gradient(circle_at_55%_85%,rgba(22,67,87,0.35),transparent_55%),#06080c] text-white">
+    <div className="h-screen w-full overflow-y-auto bg-[radial-gradient(circle_at_8%_18%,rgba(48,214,197,0.18),transparent_42%),radial-gradient(circle_at_78%_15%,rgba(255,180,84,0.16),transparent_46%),radial-gradient(circle_at_55%_85%,rgba(22,67,87,0.35),transparent_55%),#06080c] text-white">
       <div className="mx-auto w-full max-w-[1200px] px-4 py-8 sm:px-6">
         
         {/* HEADER */}
@@ -110,9 +283,84 @@ export default function AdminAbuse() {
         {loading && <div className="rounded-3xl border border-white/10 bg-white/5 p-10 text-center text-white/45">Fetching database...</div>}
         {error && <div className="rounded-3xl border border-rose-400/20 bg-rose-500/10 p-5 text-rose-300">{error}</div>}
 
+        {!loading && !error && (
+          <section className="mb-6 rounded-2xl border border-cyan-400/20 bg-cyan-500/5 p-4">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-cyan-200">Global Token Control</h2>
+              <button
+                onClick={saveTokenControl}
+                disabled={savingTokenControl}
+                className="rounded-lg border border-cyan-300/30 bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-100 transition hover:bg-cyan-500/20 disabled:opacity-60"
+              >
+                {savingTokenControl ? 'Saving...' : 'Save Control'}
+              </button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <label className="text-xs text-white/75">
+                Symbol
+                <input value={tokenControl.symbol || ''} onChange={(e) => updateTokenControlField('symbol', e.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-sm text-white focus:border-cyan-400/50 focus:outline-none" />
+              </label>
+              <label className="text-xs text-white/75">
+                Sec / Token
+                <input type="number" min="1" value={tokenControl.qualifiedSecondsPerToken ?? 180} onChange={(e) => updateTokenControlField('qualifiedSecondsPerToken', e.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-sm text-white focus:border-cyan-400/50 focus:outline-none" />
+              </label>
+              <label className="text-xs text-white/75">
+                Max Sec / Event
+                <input type="number" min="1" value={tokenControl.maxSecondsPerEvent ?? 60} onChange={(e) => updateTokenControlField('maxSecondsPerEvent', e.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-sm text-white focus:border-cyan-400/50 focus:outline-none" />
+              </label>
+              <label className="text-xs text-white/75">
+                Daily Sec Cap
+                <input type="number" min="1" value={tokenControl.maxDailyQualifiedSeconds ?? 7200} onChange={(e) => updateTokenControlField('maxDailyQualifiedSeconds', e.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-sm text-white focus:border-cyan-400/50 focus:outline-none" />
+              </label>
+              <label className="text-xs text-white/75 sm:col-span-2 lg:col-span-1">
+                Min Track Cooldown (sec)
+                <input type="number" min="0" value={tokenControl.minTrackEventIntervalSeconds ?? 8} onChange={(e) => updateTokenControlField('minTrackEventIntervalSeconds', e.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-sm text-white focus:border-cyan-400/50 focus:outline-none" />
+              </label>
+              <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/85">
+                <input type="checkbox" checked={Boolean(tokenControl.rewardsPaused)} onChange={(e) => updateTokenControlField('rewardsPaused', e.target.checked)} />
+                Rewards Paused
+              </label>
+              <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/85">
+                <input type="checkbox" checked={Boolean(tokenControl.allowAdminMintBurn)} onChange={(e) => updateTokenControlField('allowAdminMintBurn', e.target.checked)} />
+                Allow Admin Mint/Burn
+              </label>
+            </div>
+          </section>
+        )}
+
+        {!loading && !error && (
+          <section className="mb-6 rounded-2xl border border-emerald-400/20 bg-emerald-500/5 p-4">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-emerald-200">Recent Token Admin Actions</h2>
+              <button
+                onClick={fetchTokenActions}
+                className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/80 transition hover:bg-white/10"
+              >
+                Refresh
+              </button>
+            </div>
+            {tokenActions.length === 0 ? (
+              <p className="mt-3 text-xs text-white/60">No token admin actions yet.</p>
+            ) : (
+              <div className="mt-3 max-h-48 space-y-2 overflow-y-auto pr-1 text-xs text-white/80">
+                {tokenActions.slice(0, 8).map((action) => (
+                  <div key={action._id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+                    <span className="truncate">
+                      {action.adminUserName} → {action.targetUserName} ({action.delta > 0 ? '+' : ''}{action.delta} {action.symbol || 'MUZR'})
+                    </span>
+                    <span className="text-white/50">
+                      {new Date(action.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
         {/* USER LIST RESULTS */}
         {!loading && !error && (
-          <div className="grid gap-4">
+          <div className="grid max-h-[62vh] gap-4 overflow-y-auto pr-1">
             {filteredUsers.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-white/15 bg-white/5 p-10 text-center text-white/45">
                 No users match your search.
@@ -133,6 +381,9 @@ export default function AdminAbuse() {
                           {u.role === 'admin' && <FaUserShield className="text-yellow-400" title="Admin" />}
                         </div>
                         <p className="text-sm text-white/60">{u.email}</p>
+                        <p className="text-xs text-emerald-300/80 mt-1">
+                          Token balance: {u.tokenWallet?.balance || 0} {u.tokenWallet?.symbol || 'MUZR'}
+                        </p>
                       </div>
                     </div>
 
@@ -157,6 +408,41 @@ export default function AdminAbuse() {
                       </button>
                     </div>
 
+                  </div>
+
+                  <div className="mt-4 rounded-xl border border-emerald-400/20 bg-emerald-500/5 p-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-emerald-300/80">Token Control</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={tokenAmountByUser[u._id] ?? '1'}
+                        onChange={(e) => setTokenAmountForUser(u._id, e.target.value)}
+                        className="w-24 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-sm text-white focus:border-emerald-400/50 focus:outline-none"
+                      />
+                      <button
+                        onClick={() => adjustUserTokens(u._id, 'mint')}
+                        disabled={tokenUpdatingUserId === u._id}
+                        className="rounded-full border border-emerald-400/40 bg-emerald-500/15 px-4 py-1.5 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/25 disabled:opacity-60"
+                      >
+                        Mint
+                      </button>
+                      <button
+                        onClick={() => adjustUserTokens(u._id, 'burn')}
+                        disabled={tokenUpdatingUserId === u._id}
+                        className="rounded-full border border-red-400/40 bg-red-500/15 px-4 py-1.5 text-xs font-semibold text-red-200 transition hover:bg-red-500/25 disabled:opacity-60"
+                      >
+                        Burn
+                      </button>
+                      <button
+                        onClick={() => setUserTokenBalance(u._id)}
+                        disabled={tokenUpdatingUserId === u._id}
+                        className="rounded-full border border-cyan-300/40 bg-cyan-500/15 px-4 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-500/25 disabled:opacity-60"
+                      >
+                        Set Exact
+                      </button>
+                    </div>
                   </div>
                 </section>
               ))

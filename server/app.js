@@ -125,6 +125,9 @@ app.use('/api/admin', require('./routes/admin'));
 // Mount the bot router
 app.use('/api/bot', require('./routes/bot'));
 
+// Mount token integration router
+app.use('/api/token', require('./routes/token'));
+
 // Mount the Auth Router
 // This means all routes in 'routes/login.js' will start with /api/auth
 app.use('/api/auth', authRoutes); 

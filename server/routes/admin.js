@@ -3,6 +3,26 @@ const router = express.Router();
 const auth = require('../middleware/auth');   
 const admin = require('../middleware/admin'); 
 const Login = require('../models/login');     
+const TokenAdminAction = require('../models/tokenAdminAction');
+const TokenControl = require('../models/tokenControl');
+
+const DEFAULT_TOKEN_CONTROL = {
+  symbol: 'MUZR',
+  qualifiedSecondsPerToken: 180,
+  maxSecondsPerEvent: 60,
+  maxDailyQualifiedSeconds: 7200,
+  minTrackEventIntervalSeconds: 8,
+  rewardsPaused: false,
+  allowAdminMintBurn: true
+};
+
+async function getOrCreateTokenControl() {
+  let control = await TokenControl.findOne({ key: 'global' });
+  if (!control) {
+    control = await TokenControl.create({ key: 'global', ...DEFAULT_TOKEN_CONTROL });
+  }
+  return control;
+}
 
 // 1. GET ALL USERS
 router.get('/users', [auth, admin], async (req, res) => {
@@ -47,6 +67,218 @@ router.delete('/users/:id', [auth, admin], async (req, res) => {
     res.json({ message: "User eradicated" });
   } catch (err) {
     res.status(500).json({ message: "Server error" });
+  }
+});
+
+// 4. ADMIN TOKEN ADJUST (mint/burn for testing)
+router.patch('/users/:id/token', [auth, admin], async (req, res) => {
+  try {
+    const control = await getOrCreateTokenControl();
+    if (!control.allowAdminMintBurn) {
+      return res.status(403).json({ message: 'Admin mint/burn is disabled by token control settings' });
+    }
+
+    const delta = Number(req.body?.delta);
+
+    if (!Number.isFinite(delta) || !Number.isInteger(delta) || delta === 0) {
+      return res.status(400).json({ message: 'delta must be a non-zero integer' });
+    }
+
+    if (Math.abs(delta) > 100000) {
+      return res.status(400).json({ message: 'delta too large' });
+    }
+
+    const userToUpdate = await Login.findById(req.params.id);
+    if (!userToUpdate) return res.status(404).json({ message: 'User not found' });
+
+    if (!userToUpdate.tokenWallet) {
+      userToUpdate.tokenWallet = {
+        symbol: 'MUZR',
+        balance: 0,
+        totalEarned: 0
+      };
+    }
+
+    const nextBalance = (userToUpdate.tokenWallet.balance || 0) + delta;
+    if (nextBalance < 0) {
+      return res.status(400).json({ message: 'Insufficient balance for burn' });
+    }
+
+    userToUpdate.tokenWallet.balance = nextBalance;
+    if (delta > 0) {
+      userToUpdate.tokenWallet.totalEarned = (userToUpdate.tokenWallet.totalEarned || 0) + delta;
+      userToUpdate.tokenWallet.lastClaimAt = new Date();
+    }
+
+    if (!Array.isArray(userToUpdate.tokenClaims)) {
+      userToUpdate.tokenClaims = [];
+    }
+
+    userToUpdate.tokenClaims.unshift({
+      tokens: delta,
+      trackKey: `ADMIN_ADJUSTMENT::${req.user.id}`,
+      qualifiedSecondsConsumed: 0,
+      createdAt: new Date()
+    });
+
+    if (userToUpdate.tokenClaims.length > 20) {
+      userToUpdate.tokenClaims = userToUpdate.tokenClaims.slice(0, 20);
+    }
+
+    await userToUpdate.save();
+
+    await TokenAdminAction.create({
+      adminId: req.user.id,
+      adminUserName: req.user.userName || req.user.email || 'admin',
+      targetUserId: userToUpdate._id,
+      targetUserName: userToUpdate.userName,
+      delta,
+      resultingBalance: userToUpdate.tokenWallet.balance,
+      symbol: userToUpdate.tokenWallet.symbol || 'MUZR'
+    });
+
+    res.json({
+      message: 'Token wallet updated',
+      user: {
+        _id: userToUpdate._id,
+        userName: userToUpdate.userName,
+        email: userToUpdate.email,
+        role: userToUpdate.role,
+        tokenWallet: userToUpdate.tokenWallet
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// 5. SET EXACT USER TOKEN BALANCE (full control)
+router.put('/users/:id/token', [auth, admin], async (req, res) => {
+  try {
+    const nextBalance = Number(req.body?.balance);
+
+    if (!Number.isFinite(nextBalance) || !Number.isInteger(nextBalance) || nextBalance < 0) {
+      return res.status(400).json({ message: 'balance must be a non-negative integer' });
+    }
+
+    const userToUpdate = await Login.findById(req.params.id);
+    if (!userToUpdate) return res.status(404).json({ message: 'User not found' });
+
+    if (!userToUpdate.tokenWallet) {
+      userToUpdate.tokenWallet = { symbol: 'MUZR', balance: 0, totalEarned: 0 };
+    }
+
+    const prevBalance = userToUpdate.tokenWallet.balance || 0;
+    const delta = nextBalance - prevBalance;
+
+    userToUpdate.tokenWallet.balance = nextBalance;
+    if (delta > 0) {
+      userToUpdate.tokenWallet.totalEarned = (userToUpdate.tokenWallet.totalEarned || 0) + delta;
+    }
+
+    await userToUpdate.save();
+
+    await TokenAdminAction.create({
+      adminId: req.user.id,
+      adminUserName: req.user.userName || req.user.email || 'admin',
+      targetUserId: userToUpdate._id,
+      targetUserName: userToUpdate.userName,
+      delta,
+      resultingBalance: userToUpdate.tokenWallet.balance,
+      symbol: userToUpdate.tokenWallet.symbol || 'MUZR'
+    });
+
+    res.json({
+      message: 'User token balance set',
+      user: {
+        _id: userToUpdate._id,
+        userName: userToUpdate.userName,
+        email: userToUpdate.email,
+        role: userToUpdate.role,
+        tokenWallet: userToUpdate.tokenWallet
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// 6. RECENT ADMIN TOKEN ACTIONS
+router.get('/token-actions', [auth, admin], async (req, res) => {
+  try {
+    const actions = await TokenAdminAction.find()
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .lean();
+
+    res.json(actions);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// 7. TOKEN CONTROL SETTINGS (global)
+router.get('/token-control', [auth, admin], async (req, res) => {
+  try {
+    const control = await getOrCreateTokenControl();
+    res.json(control);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.patch('/token-control', [auth, admin], async (req, res) => {
+  try {
+    const control = await getOrCreateTokenControl();
+
+    const allowedFields = [
+      'symbol',
+      'qualifiedSecondsPerToken',
+      'maxSecondsPerEvent',
+      'maxDailyQualifiedSeconds',
+      'minTrackEventIntervalSeconds',
+      'rewardsPaused',
+      'allowAdminMintBurn'
+    ];
+
+    for (const field of allowedFields) {
+      if (Object.prototype.hasOwnProperty.call(req.body, field)) {
+        control[field] = req.body[field];
+      }
+    }
+
+    control.symbol = String(control.symbol || 'MUZR').trim().toUpperCase().slice(0, 10) || 'MUZR';
+
+    const numericFields = [
+      'qualifiedSecondsPerToken',
+      'maxSecondsPerEvent',
+      'maxDailyQualifiedSeconds',
+      'minTrackEventIntervalSeconds'
+    ];
+
+    for (const field of numericFields) {
+      const num = Number(control[field]);
+      if (!Number.isFinite(num) || num < 0) {
+        return res.status(400).json({ message: `Invalid value for ${field}` });
+      }
+      control[field] = Math.floor(num);
+    }
+
+    if (control.qualifiedSecondsPerToken < 1) {
+      return res.status(400).json({ message: 'qualifiedSecondsPerToken must be at least 1' });
+    }
+
+    if (control.maxSecondsPerEvent < 1) {
+      return res.status(400).json({ message: 'maxSecondsPerEvent must be at least 1' });
+    }
+
+    control.rewardsPaused = Boolean(control.rewardsPaused);
+    control.allowAdminMintBurn = Boolean(control.allowAdminMintBurn);
+
+    await control.save();
+    res.json({ message: 'Token control updated', control });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
   }
 });
 

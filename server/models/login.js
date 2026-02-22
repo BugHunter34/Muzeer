@@ -40,7 +40,31 @@ const loginSchema = new mongoose.Schema({
     webpage_url: String, // Link to the music
     currentTime: Number,
     updatedAt: Date
-  }
+  },
+
+  tokenWallet: {
+    symbol: { type: String, default: "MUZR" },
+    balance: { type: Number, default: 0 },
+    totalEarned: { type: Number, default: 0 },
+    lastClaimAt: { type: Date }
+  },
+
+  rewardState: {
+    totalQualifiedSeconds: { type: Number, default: 0 },
+    pendingQualifiedSeconds: { type: Number, default: 0 },
+    lastRewardedTrackKey: { type: String, default: "" },
+    lastRewardAt: { type: Date },
+    lastListenEventAt: { type: Date },
+    rewardDayKey: { type: String, default: "" },
+    rewardedSecondsToday: { type: Number, default: 0 }
+  },
+
+  tokenClaims: [{
+    tokens: { type: Number, required: true },
+    trackKey: { type: String, required: true },
+    qualifiedSecondsConsumed: { type: Number, required: true },
+    createdAt: { type: Date, default: Date.now }
+  }]
 }, { timestamps: true });
 
 module.exports = mongoose.models.Login || mongoose.model("Login", loginSchema);

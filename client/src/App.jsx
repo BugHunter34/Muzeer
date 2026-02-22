@@ -5,6 +5,7 @@ import './index.css'
 // Make sure to install: npm install react-icons
 import { FaPlay, FaPause, FaStepForward, FaStepBackward, FaVolumeUp, FaPlus, FaHeart, FaSearch, FaSlidersH } from 'react-icons/fa'
 import { MdQueueMusic } from 'react-icons/md'
+import TokenCompartment from './components/TokenCompartment'
 
 // Add this to your CSS or a style tag to force icons to show
 const iconStyle = { display: 'inline-block', visibility: 'visible', opacity: 1 };
@@ -45,6 +46,17 @@ const [isSearchResultsOpen, setIsSearchResultsOpen] = useState(false)
 const [featuredSongs, setFeaturedSongs] = useState([]) // Trending
 const [quickPicks, setQuickPicks] = useState([]) // Most Played
 const [loading, setLoading] = useState(false)
+const [tokenLoading, setTokenLoading] = useState(false)
+const [tokenWallet, setTokenWallet] = useState({
+  symbol: 'MUZR',
+  balance: 0,
+  totalEarned: 0,
+  pendingQualifiedSeconds: 0,
+  estimatedPendingTokens: 0,
+  rewardedSecondsToday: 0,
+  dailyRemainingSeconds: 0,
+  recentClaims: []
+})
 
 // --- Theme State ---
 const [themeOpen, setThemeOpen] = useState(false)
@@ -137,6 +149,33 @@ useEffect(() => {
           currentTime: audioRef.current.currentTime
         })
       });
+
+      const tokenRes = await fetch('http://localhost:3000/api/token/listen-event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          title: currentTrack.title,
+          artist: currentTrack.artist,
+          isPlaying: true,
+          listenedSeconds: 10
+        })
+      });
+
+      if (tokenRes.ok) {
+        const tokenData = await tokenRes.json();
+        setTokenWallet((prev) => ({
+          ...prev,
+          symbol: tokenData.symbol || prev.symbol,
+          balance: typeof tokenData.balance === 'number' ? tokenData.balance : prev.balance,
+          totalEarned: typeof tokenData.totalEarned === 'number' ? tokenData.totalEarned : prev.totalEarned,
+          pendingQualifiedSeconds: typeof tokenData.pendingQualifiedSeconds === 'number' ? tokenData.pendingQualifiedSeconds : prev.pendingQualifiedSeconds,
+          estimatedPendingTokens: Number(((tokenData.pendingQualifiedSeconds || 0) / 180).toFixed(4)),
+          rewardedSecondsToday: typeof tokenData.rewardedSecondsToday === 'number' ? tokenData.rewardedSecondsToday : prev.rewardedSecondsToday,
+          dailyRemainingSeconds: typeof tokenData.dailyRemainingSeconds === 'number' ? tokenData.dailyRemainingSeconds : prev.dailyRemainingSeconds,
+          recentClaims: Array.isArray(tokenData.recentClaims) ? tokenData.recentClaims : prev.recentClaims
+        }));
+      }
     } catch (err) {
       console.error("Failed to sync presence", err);
     }
@@ -144,6 +183,52 @@ useEffect(() => {
 
   return () => clearInterval(presenceSync);
 }, [user, isPlaying, currentTrack]);
+
+const loadTokenWallet = async () => {
+  if (!user) return;
+
+  setTokenLoading(true);
+  try {
+    const res = await fetch('http://localhost:3000/api/token/wallet', {
+      method: 'GET',
+      credentials: 'include'
+    });
+
+    if (!res.ok) return;
+    const data = await res.json();
+    setTokenWallet({
+      symbol: data.symbol || 'MUZR',
+      balance: data.balance || 0,
+      totalEarned: data.totalEarned || 0,
+      pendingQualifiedSeconds: data.pendingQualifiedSeconds || 0,
+      estimatedPendingTokens: data.estimatedPendingTokens || 0,
+      rewardedSecondsToday: data.rewardedSecondsToday || 0,
+      dailyRemainingSeconds: data.dailyRemainingSeconds || 0,
+      recentClaims: Array.isArray(data.recentClaims) ? data.recentClaims : []
+    });
+  } catch (err) {
+    console.error('Failed to load token wallet', err);
+  } finally {
+    setTokenLoading(false);
+  }
+};
+
+useEffect(() => {
+  if (user) {
+    loadTokenWallet();
+  } else {
+    setTokenWallet({
+      symbol: 'MUZR',
+      balance: 0,
+      totalEarned: 0,
+      pendingQualifiedSeconds: 0,
+      estimatedPendingTokens: 0,
+      rewardedSecondsToday: 0,
+      dailyRemainingSeconds: 0,
+      recentClaims: []
+    });
+  }
+}, [user]);
 
   // 2. Replace your "Mock" functions with real ones
   const handleLogOut = () => {
@@ -1234,6 +1319,13 @@ useEffect(() => {
 
         {/* --- RIGHT SIDEBAR (Queue & Friends) --- */}
         <aside className="hidden space-y-6 xl:flex xl:flex-col h-[calc(100vh-220px)] sticky top-24">
+
+          <TokenCompartment
+            tokenWallet={tokenWallet}
+            onRefresh={loadTokenWallet}
+            loading={tokenLoading}
+            isLoggedIn={Boolean(user)}
+          />
           
           {/* Friends Widget */}
           <div className="rounded-3xl border border-white/10 bg-[color:var(--panel)]/80 p-5 shrink-0">
