@@ -5,7 +5,19 @@ var cookieParser = require('cookie-parser');
 var logger = require('morgan');
 var cors = require('cors');
 var mongoose = require('mongoose');
-require("dotenv").config();
+var dns = require('dns');
+var dotenv = require('dotenv');
+
+dotenv.config({ path: path.join(__dirname, '.env') });
+
+Object.keys(process.env).forEach((key) => {
+  if (key.charCodeAt(0) === 0xFEFF) {
+    const normalizedKey = key.slice(1);
+    if (!process.env[normalizedKey]) {
+      process.env[normalizedKey] = process.env[key];
+    }
+  }
+});
 // --- IMPORTS ---
 var indexRouter = require('./routes/index');
 var usersRouter = require('./routes/users');
@@ -24,12 +36,60 @@ const allowedOrigins = [
 ];
 
 // --- DATABASE CONNECTION ---
-mongoose
-  .connect(process.env.DATABASE, {
-    serverSelectionTimeoutMS: 5000,
-  })
-  .then(() => console.log('Connected to MongoDB'))
-  .catch((err) => console.error('Error connecting to MongoDB:', err));
+const dnsServers = (process.env.DNS_SERVERS || '1.1.1.1,8.8.8.8')
+  .split(',')
+  .map((server) => server.trim())
+  .filter(Boolean);
+
+if (dnsServers.length > 0) {
+  try {
+    dns.setServers(dnsServers);
+  } catch (err) {
+    console.warn('Could not apply custom DNS_SERVERS:', err.message);
+  }
+}
+
+async function connectDatabase() {
+  const databaseUri = process.env.DATABASE;
+  const directDatabaseUri = process.env.DATABASE_DIRECT;
+
+  if (!databaseUri) {
+    console.warn('DATABASE is not set in server/.env. Server started without MongoDB connection.');
+    return;
+  }
+
+  try {
+    await mongoose.connect(databaseUri, {
+      serverSelectionTimeoutMS: 5000,
+    });
+    console.log('Connected to MongoDB');
+  } catch (err) {
+    const isSrvDnsIssue = err && err.code === 'ECONNREFUSED' && err.syscall === 'querySrv';
+
+    if (isSrvDnsIssue && directDatabaseUri) {
+      try {
+        console.warn('MongoDB SRV DNS lookup failed. Trying DATABASE_DIRECT fallback...');
+        await mongoose.connect(directDatabaseUri, {
+          serverSelectionTimeoutMS: 5000,
+        });
+        console.log('Connected to MongoDB (DATABASE_DIRECT fallback)');
+        return;
+      } catch (directErr) {
+        console.error('Error connecting to MongoDB with DATABASE_DIRECT:', directErr);
+        return;
+      }
+    }
+
+    if (isSrvDnsIssue) {
+      console.error('MongoDB SRV DNS lookup failed. Set DATABASE_DIRECT in server/.env or fix local DNS/network.');
+      return;
+    }
+
+    console.error('Error connecting to MongoDB:', err);
+  }
+}
+
+connectDatabase();
 
 // --- MIDDLEWARE (Order is critical!) ---
 app.set('views', path.join(__dirname, 'views'));
@@ -87,8 +147,11 @@ app.get('/api/auth/verify-email/:token', async (req, res) => {
     // 2. Pokud token neexistuje nebo už byl použit
     if (!user) {
       return res.status(400).send(`
-        <div style="background-color: #02021a; color: #ff2a2a; height: 100vh; width: 100vw; display: flex; align-items: center; justify-content: center; font-family: sans-serif; margin: 0;">
-          <h2>❌ Invalid or expired verification link.</h2>
+        <div style="margin:0;background:#060918;min-height:100vh;width:100%;display:flex;align-items:center;justify-content:center;font-family:Arial,sans-serif;padding:24px;box-sizing:border-box;">
+          <div style="max-width:560px;width:100%;background:#0b1020;border:1px solid #1e293b;border-radius:12px;padding:28px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.35);">
+            <h2 style="margin:0 0 10px 0;color:#f8fafc;font-size:28px;line-height:1.3;">Verification failed</h2>
+            <p style="margin:0;color:#94a3b8;font-size:16px;line-height:1.7;">This verification link is invalid or has expired. Please request a new verification email and try again.</p>
+          </div>
         </div>
       `);
     }
@@ -100,9 +163,11 @@ app.get('/api/auth/verify-email/:token', async (req, res) => {
 
     // 4. Pošli krásnou HTML odpověď přímo do prohlížeče
     res.status(200).send(`
-      <div style="background-color: #02021a; color: #facc15; height: 100vh; width: 100vw; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; margin: 0; text-align: center;">
-        <h1 style="font-size: 3rem; margin-bottom: 10px;">✅ Auth Completed!</h1>
-        <p style="color: rgba(255,255,255,0.7); font-size: 1.2rem;">Your account is now verified. You can close this window and log in to Muzeer.</p>
+      <div style="margin:0;background:#060918;min-height:100vh;width:100%;display:flex;align-items:center;justify-content:center;font-family:Arial,sans-serif;padding:24px;box-sizing:border-box;">
+        <div style="max-width:560px;width:100%;background:#0b1020;border:1px solid #1e293b;border-radius:12px;padding:28px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.35);">
+          <h1 style="margin:0 0 10px 0;color:#f8fafc;font-size:34px;line-height:1.2;">Email verified</h1>
+          <p style="margin:0;color:#94a3b8;font-size:16px;line-height:1.7;">Your account has been successfully verified. You can close this window and log in to Muzeer.</p>
+        </div>
         
         <script>
           setTimeout(() => {

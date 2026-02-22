@@ -8,6 +8,9 @@ var app = require('../app');
 var debug = require('debug')('server:server');
 var http = require('http');
 
+var maxPortRetries = 20;
+var portRetries = 0;
+
 /**
  * Get port from environment and store in Express.
  */
@@ -69,8 +72,18 @@ function onError(error) {
       process.exit(1);
       break;
     case 'EADDRINUSE':
-      console.error(bind + ' is already in use');
-      process.exit(1);
+      if (portRetries >= maxPortRetries) {
+        console.error(bind + ' is already in use');
+        process.exit(1);
+      }
+
+      portRetries += 1;
+      port = normalizePort(Number(port) + 1);
+      app.set('port', port);
+      console.warn(bind + ' is already in use. Retrying on port ' + port + '...');
+      setTimeout(function () {
+        server.listen(port);
+      }, 100);
       break;
     default:
       throw error;
