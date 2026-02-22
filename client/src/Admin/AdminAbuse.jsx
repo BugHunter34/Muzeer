@@ -84,7 +84,7 @@ export default function AdminAbuse() {
         <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-[0.35em] text-yellow-400/80">God Mode</p>
-            <h1 className="mt-1 text-3xl font-semibold text-yellow-400">Admin Command Center</h1>
+            <h1 className="mt-1 text-3xl font-semibold text-yellow-400">Admin Abuse Center</h1>
           </div>
           <button
             onClick={() => navigate('/')}
@@ -96,7 +96,7 @@ export default function AdminAbuse() {
 
         {/* SEARCH BAR */}
         <div className="relative mb-7 flex w-full items-center gap-3 group">
-          <FaSearch className="absolute left-4 text-white/30 group-focus-within:text-yellow-400" />
+          <FaSearch className="absolute right-4 text-white/30 group-focus-within:text-yellow-400" />
           <input
             type="text"
             value={searchQuery}
