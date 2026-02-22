@@ -1,10 +1,7 @@
-// utils/sendEmail.js
 const nodemailer = require('nodemailer');
 require("dotenv").config();
- 
 
 const sendEmail = async (to, code) => {
-  const role = "owner";
   const transporter = nodemailer.createTransport({
     host: 'smtp.gmail.com',
     port: 465,
@@ -17,56 +14,44 @@ const sendEmail = async (to, code) => {
       rejectUnauthorized: false
     }
   });
-let subjectLine = '';
-  let emailHtml = '';
 
-  // 👑 OWNER TEMPLATE (Ultra Premium / High Security Vibe)
-  if (role === 'owner') {
-    subjectLine = '👑 Muzeer - Ahoj tati';
-    emailHtml = `
-      <div style="font-family: 'Courier New', monospace; text-align: center; padding: 40px; background-color: #000000; color: #fbbf24; border: 2px solid #fbbf24; border-radius: 12px; max-width: 500px; margin: 0 auto;">
-        <h2 style="color: #fbbf24; text-transform: uppercase; letter-spacing: 4px; margin-bottom: 5px;">System Owner</h2>
-        <p style="color: #ffffff; font-family: Arial, sans-serif; font-size: 14px;">Master clearance requested for Muzeer Core.</p>
-        <div style="background-color: #111111; padding: 20px; border-radius: 8px; margin: 30px 0;">
-          <h1 style="font-size: 48px; letter-spacing: 12px; color: #ef4444; margin: 0;">${code}</h1>
-        </div>
-        <p style="color: #666666; font-size: 12px; font-family: Arial, sans-serif;">This override code expires in 10 minutes. Do not share this with anyone.</p>
-      </div>
-    `;
-  } 
-  
-  // 🛡️ ADMIN TEMPLATE (System Admin Vibe)
-  else if (role === 'admin') {
-    subjectLine = '🛡️ Muzeer - Admin Clearance Code';
-    emailHtml = `
-      <div style="font-family: Arial, sans-serif; text-align: center; padding: 40px; background-color: #0f172a; color: #ffffff; border-top: 5px solid #3b82f6; border-radius: 8px; max-width: 500px; margin: 0 auto;">
-        <h2 style="color: #3b82f6; text-transform: uppercase; letter-spacing: 2px;">Admin Security Gate</h2>
-        <p style="color: #cbd5e1; font-size: 15px;">Elevated access requested. Your authentication code is:</p>
-        <h1 style="font-size: 42px; letter-spacing: 8px; color: #ffffff; background: #1e293b; padding: 15px; border-radius: 8px; border: 1px solid #334155;">${code}</h1>
-        <p style="color: #64748b; font-size: 12px; margin-top: 20px;">Code valid for 10 minutes.</p>
-      </div>
-    `;
-  } 
-  
-  // 🎧 STANDARD USER TEMPLATE (Classic Muzeer Vibe)
-  else {
-    subjectLine = 'Muzeer - Your Login Code';
-    emailHtml = `
-      <div style="font-family: Arial, sans-serif; text-align: center; padding: 40px; background-color: #02021a; color: white; border-radius: 12px; max-width: 500px; margin: 0 auto;">
-        <h2 style="color: #ec4899; margin-bottom: 5px;">Muzeer Security</h2>
-        <p style="color: rgba(255,255,255,0.7); font-size: 16px;">Welcome back. Your login verification code is:</p>
-        <h1 style="font-size: 40px; letter-spacing: 6px; color: #facc15; margin: 30px 0;">${code}</h1>
-        <p style="color: rgba(255,255,255,0.3); font-size: 12px;">This code will expire in 10 minutes.</p>
-      </div>
-    `;
-  }
-
-  // Combine and Send
   const mailOptions = {
     from: process.env.EMAIL_USER,
     to: to,
-    subject: subjectLine,
-    html: emailHtml
+    subject: 'Muzeer - Your Login Code',
+    html: `
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#060918;padding:36px 12px;font-family:Arial,sans-serif;">
+        <tr>
+          <td align="center">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:580px;background:#0b1020;border:1px solid #1e293b;border-radius:12px;overflow:hidden;">
+              <tr>
+                <td style="padding:26px 26px 12px 26px;text-align:center;">
+                  <div style="font-size:12px;letter-spacing:1.4px;text-transform:uppercase;color:#64748b;font-weight:700;">Muzeer Security</div>
+                  <h1 style="margin:10px 0 0 0;color:#f8fafc;font-size:28px;line-height:1.25;">Login verification</h1>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:12px 26px 0 26px;text-align:center;color:#94a3b8;font-size:15px;line-height:1.7;">
+                  Your login verification code is:
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:20px 26px;text-align:center;">
+                  <div style="background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:18px;display:inline-block;">
+                    <div style="font-size:36px;letter-spacing:8px;color:#f8fafc;font-weight:700;font-family:'Courier New',monospace;">${code}</div>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 26px 24px 26px;text-align:center;color:#64748b;font-size:12px;line-height:1.6;">
+                  This code will expire in 10 minutes. If you didn't request this, you can safely ignore this email.
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    `
   };
 
   await transporter.sendMail(mailOptions);
