@@ -128,7 +128,7 @@ app.use('/api/auth', authRoutes);
 
 // ✅ Me router (profile self)
 app.use('/api/me', require('./routes/me'));
-
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Heartbeat verify
 app.get('/api/auth/verify', authMiddleware, (req, res) => {
   res.status(200).json({ message: "User is alive" });

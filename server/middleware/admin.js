@@ -1,9 +1,9 @@
+// server/middleware/admin.js
 module.exports = (req, res, next) => {
-  // auth.js runs first and creates req.user. 
-  // Now we just check if that user is an admin.
-  if (req.user && req.user.role === 'admin') {
-    next();
-  } else {
-    return res.status(403).json({ message: "Access denied. Admins only, nice try!" });
-  }
+  console.log("ADMIN MIDDLEWARE HIT:", req.method, req.originalUrl, "ROLE:", req.user?.role);
+
+  const role = req.user?.role;
+  if (role === "admin" || role === "owner") return next();
+
+  return res.status(403).json({ message: "Access denied. Admins/Owners only." });
 };

@@ -1,51 +1,32 @@
+// server/routes/login.js
 const express = require("express");
 const router = express.Router();
+
+const LoginController = require("../controllers/login");
+const RegisterController = require("../controllers/register");
+const presenceController = require("../controllers/presence");
+const meController = require("../controllers/me");
+
 const auth = require("../middleware/auth");
+const admin = require("../middleware/admin");
 
-// GET /api/me -> vrátí aktuálně přihlášeného usera
-router.get("/", auth, (req, res) => {
-  return res.json({
-    user: {
-      id: req.user._id,
-      email: req.user.email,
-      userName: req.user.userName,
-      role: req.user.role,
-      discordId: req.user.discordId,
-      discordName: req.user.discordName,
-    },
-  });
-});
+// PUBLIC
+router.post("/login", LoginController.login);
+router.post("/register", RegisterController.register);
+router.post("/login/verify-2fa", LoginController.verify2FA);
 
-// PUT /api/me -> update profilu (zatím userName)
-router.put("/", auth, async (req, res) => {
-  try {
-    const { userName } = req.body;
+// ✅ PROFILE (NORMAL USER) — auth ONLY
+router.get("/me", auth, meController.getMe);
+router.patch("/me", auth, meController.updateMe);
+router.post("/me/avatar", auth, meController.uploadAvatar); // pokud to máš
 
-    if (typeof userName !== "string" || userName.trim().length < 2) {
-      return res.status(400).json({ message: "Username must be at least 2 characters" });
-    }
-    if (userName.trim().length > 24) {
-      return res.status(400).json({ message: "Username too long (max 24)" });
-    }
+// presence
+router.post("/presence", auth, presenceController.updatePresence);
 
-    req.user.userName = userName.trim();
-    await req.user.save();
-
-    return res.json({
-      message: "Profile updated",
-      user: {
-        id: req.user._id,
-        email: req.user.email,
-        userName: req.user.userName,
-        role: req.user.role,
-        discordId: req.user.discordId,
-        discordName: req.user.discordName,
-      },
-    });
-  } catch (err) {
-    console.error("ME PUT ERROR:", err);
-    return res.status(500).json({ message: "Failed to update profile", error: err.message });
-  }
-});
+// ADMIN ONLY — až dole
+router.get("/", auth, admin, LoginController.getAllUsers);
+router.get("/:id", auth, admin, LoginController.getUserById);
+router.put("/:id", auth, admin, LoginController.updateUser);
+router.delete("/:id", auth, admin, LoginController.deleteUser);
 
 module.exports = router;
