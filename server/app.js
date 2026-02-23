@@ -97,12 +97,13 @@ app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ✅ serve uploaded avatars
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 // --- CORS (must be before routes) ---
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (curl, mobile apps)
     if (!origin) return callback(null, true);
-
     if (allowedOrigins.includes(origin)) return callback(null, true);
     return callback(new Error('Not allowed by CORS'));
   },
@@ -112,7 +113,6 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-// preflight pro všechno
 app.options('*', cors(corsOptions));
 
 // --- ROUTES ---
@@ -126,9 +126,9 @@ app.use('/api/token', require('./routes/token'));
 // Auth router
 app.use('/api/auth', authRoutes);
 
-// ✅ Me router (profile self)
+// Me router
 app.use('/api/me', require('./routes/me'));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 // Heartbeat verify
 app.get('/api/auth/verify', authMiddleware, (req, res) => {
   res.status(200).json({ message: "User is alive" });
@@ -140,7 +140,6 @@ const Login = require('./models/login');
 app.get('/api/auth/verify-email/:token', async (req, res) => {
   try {
     const token = req.params.token;
-
     const user = await Login.findOne({ verifyToken: token });
 
     if (!user) {

@@ -15,6 +15,11 @@ export default function Profile() {
   const [saving, setSaving] = useState(false);
   const [banner, setBanner] = useState(null);
 
+  const saveUserToLocal = (user) => {
+    localStorage.setItem("user", JSON.stringify(user));
+    window.dispatchEvent(new Event("userUpdated"));
+  };
+
   // ---- role theme ----
   const theme = useMemo(() => {
     const role = me?.role || "user";
@@ -48,13 +53,24 @@ export default function Profile() {
     };
   }, [me]);
 
-  const avatarSrc = avatarPreview || (me?.avatarUrl ? `${serverBase}${me.avatarUrl}` : null);
+  const avatarSrc =
+    avatarPreview ||
+    (me?.avatarUrl
+      ? (me.avatarUrl.startsWith("http") ? me.avatarUrl : `${serverBase}${me.avatarUrl}`)
+      : null);
 
   const setField = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
   const pickAvatar = (file) => {
     setAvatarFile(file || null);
-    if (!file) return setAvatarPreview(null);
+
+    if (avatarPreview) URL.revokeObjectURL(avatarPreview);
+
+    if (!file) {
+      setAvatarPreview(null);
+      return;
+    }
+
     const url = URL.createObjectURL(file);
     setAvatarPreview(url);
   };
@@ -89,8 +105,7 @@ export default function Profile() {
           email: user?.email || "",
         });
 
-        localStorage.setItem("user", JSON.stringify(user));
-        window.dispatchEvent(new Event("userUpdated"));
+        saveUserToLocal(user);
       } catch (e) {
         console.error("GET /api/auth/me failed:", e);
       } finally {
@@ -123,14 +138,12 @@ export default function Profile() {
 
       if (!patchRes.ok) {
         setBanner({ type: "error", text: patchData?.message || "Save failed." });
-        setSaving(false);
         return;
       }
 
       const patched = patchData?.user || patchData;
       setMe(patched);
-      localStorage.setItem("user", JSON.stringify(patched));
-      window.dispatchEvent(new Event("userUpdated"));
+      saveUserToLocal(patched);
 
       // 2) Avatar upload
       if (avatarFile) {
@@ -147,16 +160,15 @@ export default function Profile() {
 
         if (!upRes.ok) {
           setBanner({ type: "error", text: upData?.message || "Avatar upload failed." });
-          setSaving(false);
           return;
         }
 
         const updated = upData?.user || upData;
         setMe(updated);
-        localStorage.setItem("user", JSON.stringify(updated));
-        window.dispatchEvent(new Event("userUpdated"));
+        saveUserToLocal(updated);
 
         setAvatarFile(null);
+        if (avatarPreview) URL.revokeObjectURL(avatarPreview);
         setAvatarPreview(null);
       }
 
@@ -172,6 +184,7 @@ export default function Profile() {
   const logout = () => {
     localStorage.removeItem("user");
     localStorage.removeItem("token");
+    window.dispatchEvent(new Event("userUpdated"));
     navigate("/login");
   };
 
@@ -188,10 +201,7 @@ export default function Profile() {
   }
 
   if (!me) return null;
-  fetch("http://localhost:3000/api/auth/me", {
-    method: "GET",
-    credentials: "include",
-  });
+
   return (
     <div
       style={{

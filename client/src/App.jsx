@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom';
 import './App.css'
 import './index.css'
-// Make sure to install: npm install react-icons
 import { FaPlay, FaPause, FaStepForward, FaStepBackward, FaVolumeUp, FaPlus, FaHeart, FaSearch, FaSlidersH } from 'react-icons/fa'
 import { MdQueueMusic } from 'react-icons/md'
 import TokenCompartment from './components/TokenCompartment'
@@ -17,236 +16,237 @@ const friends = [
   { name: 'Mira', track: 'Light Trails', artist: 'Glasswave' },
 ]
 
-
 function App() {
-  const [appName] = useState('Muzeer') 
+  const [appName] = useState('Muzeer')
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
 
-  // 1. Check for a logged-in user when the app loads
+  const serverBase = "http://localhost:3000";
+
+  // ✅ 1) Sync user (localStorage + event userUpdated + storage)
   useEffect(() => {
-    const savedUser = localStorage.getItem('user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
+    const syncUser = () => {
+      const savedUser = localStorage.getItem('user');
+      setUser(savedUser ? JSON.parse(savedUser) : null);
+    };
+
+    syncUser();
+    window.addEventListener("userUpdated", syncUser);
+    window.addEventListener("storage", syncUser);
+
+    return () => {
+      window.removeEventListener("userUpdated", syncUser);
+      window.removeEventListener("storage", syncUser);
+    };
   }, []);
 
-  /*useEffect(() => {
-    console.log("APP COMPONENT THINKS USER IS:", user);
-  }, [user]);*/
+  // ✅ Avatar URL helper (for sidebar etc.)
+  const avatarSrc =
+    user?.avatarUrl
+      ? (user.avatarUrl.startsWith("http")
+        ? user.avatarUrl
+        : `${serverBase}${user.avatarUrl}`)
+      : "";
 
+  // --- Data State ---
+  const [query, setQuery] = useState('')
+  const [searchResults, setSearchResults] = useState([])
+  const [visibleSearchCount, setVisibleSearchCount] = useState(0)
+  const [searchProgress, setSearchProgress] = useState(0)
+  const [searchProgressTarget, setSearchProgressTarget] = useState(0)
+  const [isSearchResultsOpen, setIsSearchResultsOpen] = useState(false)
+  const [featuredSongs, setFeaturedSongs] = useState([]) // Trending
+  const [quickPicks, setQuickPicks] = useState([]) // Most Played
+  const [loading, setLoading] = useState(false)
+  const [tokenLoading, setTokenLoading] = useState(false)
+  const [tokenWallet, setTokenWallet] = useState({
+    symbol: 'MUZR',
+    balance: 0,
+    totalEarned: 0,
+    pendingQualifiedSeconds: 0,
+    estimatedPendingTokens: 0,
+    rewardedSecondsToday: 0,
+    dailyRemainingSeconds: 0,
+    recentClaims: []
+  })
 
-// --- Data State ---
-const [query, setQuery] = useState('')
-const [searchResults, setSearchResults] = useState([])
-const [visibleSearchCount, setVisibleSearchCount] = useState(0)
-const [searchProgress, setSearchProgress] = useState(0)
-const [searchProgressTarget, setSearchProgressTarget] = useState(0)
-const [isSearchResultsOpen, setIsSearchResultsOpen] = useState(false)
-const [featuredSongs, setFeaturedSongs] = useState([]) // Trending
-const [quickPicks, setQuickPicks] = useState([]) // Most Played
-const [loading, setLoading] = useState(false)
-const [tokenLoading, setTokenLoading] = useState(false)
-const [tokenWallet, setTokenWallet] = useState({
-  symbol: 'MUZR',
-  balance: 0,
-  totalEarned: 0,
-  pendingQualifiedSeconds: 0,
-  estimatedPendingTokens: 0,
-  rewardedSecondsToday: 0,
-  dailyRemainingSeconds: 0,
-  recentClaims: []
-})
+  // --- Theme State ---
+  const [themeOpen, setThemeOpen] = useState(false)
+  const [accentStart, setAccentStart] = useState('#3bf0d1')
+  const [accentEnd, setAccentEnd] = useState('#ffb454')
+  const [speakerGlow, setSpeakerGlow] = useState('#3bf0d1')
+  const [intensity, setIntensity] = useState(1)
 
-// --- Theme State ---
-const [themeOpen, setThemeOpen] = useState(false)
-const [accentStart, setAccentStart] = useState('#3bf0d1')
-const [accentEnd, setAccentEnd] = useState('#ffb454')
-const [speakerGlow, setSpeakerGlow] = useState('#3bf0d1')
-const [intensity, setIntensity] = useState(1)
+  // --- Playlist & Queue State ---
+  const [playlists, setPlaylists] = useState(['Daily Mix 1', 'Chill Focus', 'Pinkwave Essentials'])
+  const [queue, setQueue] = useState([])
+  const [queueIndex, setQueueIndex] = useState(0)
 
-// --- Playlist & Queue State ---
-const [playlists, setPlaylists] = useState(['Daily Mix 1', 'Chill Focus', 'Pinkwave Essentials']) 
-const [queue, setQueue] = useState([])
-const [queueIndex, setQueueIndex] = useState(0)
-
-// --- Audio Player State ---
-
-const audioRef = useRef(null);
+  // --- Audio Player State ---
+  const audioRef = useRef(null);
   if (!audioRef.current) {
     audioRef.current = new Audio();
-    audioRef.current.crossOrigin = "anonymous"; 
+    audioRef.current.crossOrigin = "anonymous";
   }
-const ambienceRef = useRef(null)
-const wavesRef = useRef(null)
-const audioContextRef = useRef(null)
-const analyserRef = useRef(null)
-const dataArrayRef = useRef(null)
-const sourceNodeRef = useRef(null)
-const rafRef = useRef(null)
-const searchRevealTimerRef = useRef(null)
-const searchFetchProgressTimerRef = useRef(null)
-const searchFinalizeProgressTimerRef = useRef(null)
-const searchSmoothProgressTimerRef = useRef(null)
-const [isPlaying, setIsPlaying] = useState(false)
-const [volume, setVolume] = useState(0.5) 
-const [currentTime, setCurrentTime] = useState(0)
-const [duration, setDuration] = useState(0)
-const [currentTrack, setCurrentTrack] = useState({
-  title: 'Select a track',
-  artist: '...',
-  thumbnail: null,
-  audio_url: null
-})
+  const ambienceRef = useRef(null)
+  const wavesRef = useRef(null)
+  const audioContextRef = useRef(null)
+  const analyserRef = useRef(null)
+  const dataArrayRef = useRef(null)
+  const sourceNodeRef = useRef(null)
+  const rafRef = useRef(null)
+  const searchRevealTimerRef = useRef(null)
+  const searchFetchProgressTimerRef = useRef(null)
+  const searchFinalizeProgressTimerRef = useRef(null)
+  const searchSmoothProgressTimerRef = useRef(null)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [volume, setVolume] = useState(0.5)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [currentTrack, setCurrentTrack] = useState({
+    title: 'Select a track',
+    artist: '...',
+    thumbnail: null,
+    audio_url: null
+  })
 
-// --- THE BAN HEARTBEAT ---
+  // --- THE BAN HEARTBEAT ---
   useEffect(() => {
-    // Only ping if someone is logged in
-    if (!user) return; 
+    if (!user) return;
 
     const heartbeat = setInterval(async () => {
       try {
-        const res = await fetch('http://localhost:3000/api/auth/verify', { 
+        const res = await fetch('http://localhost:3000/api/auth/verify', {
           method: 'GET',
-          credentials: 'include' // Important! Sends the token
+          credentials: 'include'
         });
 
-        // 401 means the database rejected them (Deleted or Expired!)
         if (res.status === 401) {
-          localStorage.setItem('banned', 'true'); // Drop the ban flag
+          localStorage.setItem('banned', 'true');
           localStorage.removeItem('user');
           localStorage.removeItem('token');
-          window.location.href = '/'; // Force hard reload
+          window.dispatchEvent(new Event("userUpdated"));
+          window.location.href = '/';
         }
-        else if (res.status === 404){
+        else if (res.status === 404) {
           console.log("Can't connect to server")
           alert("You're offline")
         }
       } catch (err) {
-        // Silently fail if server is just offline
+        // silent
       }
-    }, 10000); // Pings the server every 5 seconds
+    }, 10000);
 
     return () => clearInterval(heartbeat);
   }, [user]);
 
-// --- Current listent HEARTBEAT ---
-useEffect(() => {
-  if (!user || !isPlaying || !currentTrack.title) return;
+  // --- Current listen HEARTBEAT ---
+  useEffect(() => {
+    if (!user || !isPlaying || !currentTrack.title) return;
 
-  
-  const presenceSync = setInterval(async () => {
-    try {
-      await fetch('http://localhost:3000/api/me/presence', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // Send cookies/token so the server knows WHO is updating
-        credentials: 'include', 
-        body: JSON.stringify({
-          title: currentTrack.title,
-          artist: currentTrack.artist,
-          webpage_url: currentTrack.webpage_url,
-          currentTime: audioRef.current.currentTime
-        })
-      });
+    const presenceSync = setInterval(async () => {
+      try {
+        await fetch('http://localhost:3000/api/me/presence', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            title: currentTrack.title,
+            artist: currentTrack.artist,
+            webpage_url: currentTrack.webpage_url,
+            currentTime: audioRef.current.currentTime
+          })
+        });
 
-      const tokenRes = await fetch('http://localhost:3000/api/token/listen-event', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          title: currentTrack.title,
-          artist: currentTrack.artist,
-          isPlaying: true,
-          listenedSeconds: 10
-        })
-      });
+        const tokenRes = await fetch('http://localhost:3000/api/token/listen-event', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            title: currentTrack.title,
+            artist: currentTrack.artist,
+            isPlaying: true,
+            listenedSeconds: 10
+          })
+        });
 
-      if (tokenRes.ok) {
-        const tokenData = await tokenRes.json();
-        setTokenWallet((prev) => ({
-          ...prev,
-          symbol: tokenData.symbol || prev.symbol,
-          balance: typeof tokenData.balance === 'number' ? tokenData.balance : prev.balance,
-          totalEarned: typeof tokenData.totalEarned === 'number' ? tokenData.totalEarned : prev.totalEarned,
-          pendingQualifiedSeconds: typeof tokenData.pendingQualifiedSeconds === 'number' ? tokenData.pendingQualifiedSeconds : prev.pendingQualifiedSeconds,
-          estimatedPendingTokens: Number(((tokenData.pendingQualifiedSeconds || 0) / 180).toFixed(4)),
-          rewardedSecondsToday: typeof tokenData.rewardedSecondsToday === 'number' ? tokenData.rewardedSecondsToday : prev.rewardedSecondsToday,
-          dailyRemainingSeconds: typeof tokenData.dailyRemainingSeconds === 'number' ? tokenData.dailyRemainingSeconds : prev.dailyRemainingSeconds,
-          recentClaims: Array.isArray(tokenData.recentClaims) ? tokenData.recentClaims : prev.recentClaims
-        }));
+        if (tokenRes.ok) {
+          const tokenData = await tokenRes.json();
+          setTokenWallet((prev) => ({
+            ...prev,
+            symbol: tokenData.symbol || prev.symbol,
+            balance: typeof tokenData.balance === 'number' ? tokenData.balance : prev.balance,
+            totalEarned: typeof tokenData.totalEarned === 'number' ? tokenData.totalEarned : prev.totalEarned,
+            pendingQualifiedSeconds: typeof tokenData.pendingQualifiedSeconds === 'number' ? tokenData.pendingQualifiedSeconds : prev.pendingQualifiedSeconds,
+            estimatedPendingTokens: Number(((tokenData.pendingQualifiedSeconds || 0) / 180).toFixed(4)),
+            rewardedSecondsToday: typeof tokenData.rewardedSecondsToday === 'number' ? tokenData.rewardedSecondsToday : prev.rewardedSecondsToday,
+            dailyRemainingSeconds: typeof tokenData.dailyRemainingSeconds === 'number' ? tokenData.dailyRemainingSeconds : prev.dailyRemainingSeconds,
+            recentClaims: Array.isArray(tokenData.recentClaims) ? tokenData.recentClaims : prev.recentClaims
+          }));
+        }
+      } catch (err) {
+        console.error("Failed to sync presence", err);
       }
+    }, 10000);
+
+    return () => clearInterval(presenceSync);
+  }, [user, isPlaying, currentTrack]);
+
+  const loadTokenWallet = async () => {
+    if (!user) return;
+
+    setTokenLoading(true);
+    try {
+      const res = await fetch('http://localhost:3000/api/token/wallet', {
+        method: 'GET',
+        credentials: 'include'
+      });
+
+      if (!res.ok) return;
+      const data = await res.json();
+      setTokenWallet({
+        symbol: data.symbol || 'MUZR',
+        balance: data.balance || 0,
+        totalEarned: data.totalEarned || 0,
+        pendingQualifiedSeconds: data.pendingQualifiedSeconds || 0,
+        estimatedPendingTokens: data.estimatedPendingTokens || 0,
+        rewardedSecondsToday: data.rewardedSecondsToday || 0,
+        dailyRemainingSeconds: data.dailyRemainingSeconds || 0,
+        recentClaims: Array.isArray(data.recentClaims) ? data.recentClaims : []
+      });
     } catch (err) {
-      console.error("Failed to sync presence", err);
+      console.error('Failed to load token wallet', err);
+    } finally {
+      setTokenLoading(false);
     }
-  }, 10000); // update every 10s
+  };
 
-  return () => clearInterval(presenceSync);
-}, [user, isPlaying, currentTrack]);
+  useEffect(() => {
+    if (user) {
+      loadTokenWallet();
+    } else {
+      setTokenWallet({
+        symbol: 'MUZR',
+        balance: 0,
+        totalEarned: 0,
+        pendingQualifiedSeconds: 0,
+        estimatedPendingTokens: 0,
+        rewardedSecondsToday: 0,
+        dailyRemainingSeconds: 0,
+        recentClaims: []
+      });
+    }
+  }, [user]);
 
-const loadTokenWallet = async () => {
-  if (!user) return;
-
-  setTokenLoading(true);
-  try {
-    const res = await fetch('http://localhost:3000/api/token/wallet', {
-      method: 'GET',
-      credentials: 'include'
-    });
-
-    if (!res.ok) return;
-    const data = await res.json();
-    setTokenWallet({
-      symbol: data.symbol || 'MUZR',
-      balance: data.balance || 0,
-      totalEarned: data.totalEarned || 0,
-      pendingQualifiedSeconds: data.pendingQualifiedSeconds || 0,
-      estimatedPendingTokens: data.estimatedPendingTokens || 0,
-      rewardedSecondsToday: data.rewardedSecondsToday || 0,
-      dailyRemainingSeconds: data.dailyRemainingSeconds || 0,
-      recentClaims: Array.isArray(data.recentClaims) ? data.recentClaims : []
-    });
-  } catch (err) {
-    console.error('Failed to load token wallet', err);
-  } finally {
-    setTokenLoading(false);
-  }
-};
-
-useEffect(() => {
-  if (user) {
-    loadTokenWallet();
-  } else {
-    setTokenWallet({
-      symbol: 'MUZR',
-      balance: 0,
-      totalEarned: 0,
-      pendingQualifiedSeconds: 0,
-      estimatedPendingTokens: 0,
-      rewardedSecondsToday: 0,
-      dailyRemainingSeconds: 0,
-      recentClaims: []
-    });
-  }
-}, [user]);
-
-  // 2. Replace your "Mock" functions with real ones
   const handleLogOut = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    setUser(null); // Clear the sidebar
+    window.dispatchEvent(new Event("userUpdated"));
     navigate('/login');
   };
 
-  // --- Auth State ---
-  // null = guest, object = logged in. Toggle this to see 'My Account'
-
-
-
-
-
-// ---------------------------------------------------------
-  // 1. INITIAL APP LOAD (Runs exactly ONCE when you open Muzeer)
+  // ---------------------------------------------------------
+  // 1. INITIAL APP LOAD
   // ---------------------------------------------------------
   useEffect(() => {
     const fetchTrending = async () => {
@@ -256,35 +256,32 @@ useEffect(() => {
         setFeaturedSongs(data)
       } catch (e) { console.error("Trending fetch error", e) }
     }
-    
+
     fetchTrending();
     loadQuickPicks();
-  }, []); // <-- Only do this on startup (empty)
-
+  }, []);
 
   // ---------------------------------------------------------
-  // 2. VOLUME CONTROLLER (Runs ONLY when you drag the volume slider)
+  // 2. VOLUME CONTROLLER
   // ---------------------------------------------------------
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.volume = volume;
     }
-  }, [volume]); // <-- Only listens to volume changes
-
+  }, [volume]);
 
   // ---------------------------------------------------------
-  // 3. AUDIO ENGINE & DISCORD PRESENCE (Runs ONLY when track changes)
+  // 3. AUDIO ENGINE & DISCORD PRESENCE
   // ---------------------------------------------------------
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    
+
     audio.crossOrigin = 'anonymous';
 
-    // Discord Presence Sync
     const updatePresence = (playing) => {
       if (!currentTrack || !currentTrack.title || currentTrack.title === 'Select a track') return;
-      
+
       fetch('http://localhost:3000/api/auth/presence', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -294,12 +291,11 @@ useEffect(() => {
           artist: currentTrack.artist,
           webpage_url: currentTrack.webpage_url,
           isPlaying: playing,
-          offset: audio.currentTime 
+          offset: audio.currentTime
         })
       }).catch(err => console.log("Presence sync failed", err));
     };
 
-    // Standard audio events
     const updateTime = () => setCurrentTime(audio.currentTime);
     const updateDuration = () => setDuration(audio.duration);
     const onEnded = () => handleNextTrack();
@@ -308,7 +304,6 @@ useEffect(() => {
     const onPause = () => updatePresence(false);
     const onSeeked = () => updatePresence(true);
 
-    // Add Listeners
     audio.addEventListener('timeupdate', updateTime);
     audio.addEventListener('loadedmetadata', updateDuration);
     audio.addEventListener('ended', onEnded);
@@ -316,7 +311,6 @@ useEffect(() => {
     audio.addEventListener('pause', onPause);
     audio.addEventListener('seeked', onSeeked);
 
-    // Cleanup when song changes or app closes
     return () => {
       audio.removeEventListener('timeupdate', updateTime);
       audio.removeEventListener('loadedmetadata', updateDuration);
@@ -324,43 +318,42 @@ useEffect(() => {
       audio.removeEventListener('play', onPlay);
       audio.removeEventListener('pause', onPause);
       audio.removeEventListener('seeked', onSeeked);
-      
+
       if (searchRevealTimerRef.current) clearInterval(searchRevealTimerRef.current);
       if (searchFetchProgressTimerRef.current) clearInterval(searchFetchProgressTimerRef.current);
       if (searchFinalizeProgressTimerRef.current) clearInterval(searchFinalizeProgressTimerRef.current);
       if (searchSmoothProgressTimerRef.current) clearInterval(searchSmoothProgressTimerRef.current);
-      
+
       stopVisualizer();
     }
   }, [currentTrack]);
-
 
   // --- LOGIC: LOCAL PLAY COUNT ---
   const recordPlay = (track) => {
     const history = JSON.parse(localStorage.getItem('playHistory') || '[]')
     const existingIndex = history.findIndex(item => item.title === track.title)
-    
+
     if (existingIndex > -1) {
-        history[existingIndex].count += 1
-        history[existingIndex].lastPlayed = new Date()
+      history[existingIndex].count += 1
+      history[existingIndex].lastPlayed = new Date()
     } else {
-        history.push({
-            title: track.title,
-            artist: track.artist,
-            thumbnail: track.thumbnail,
-            webpage_url: track.webpage_url,
-            count: 1,
-            lastPlayed: new Date()
-        })
+      history.push({
+        title: track.title,
+        artist: track.artist,
+        thumbnail: track.thumbnail,
+        webpage_url: track.webpage_url,
+        count: 1,
+        lastPlayed: new Date()
+      })
     }
     localStorage.setItem('playHistory', JSON.stringify(history))
     loadQuickPicks()
   }
 
   const loadQuickPicks = () => {
-      const history = JSON.parse(localStorage.getItem('playHistory') || '[]')
-      const sorted = history.sort((a, b) => b.count - a.count).slice(0, 6) // Top 6
-      setQuickPicks(sorted)
+    const history = JSON.parse(localStorage.getItem('playHistory') || '[]')
+    const sorted = history.sort((a, b) => b.count - a.count).slice(0, 6)
+    setQuickPicks(sorted)
   }
 
   // --- LOGIC: PLAYER ---
@@ -368,26 +361,26 @@ useEffect(() => {
     if (queue.length > queueIndex + 1) {
       const nextIndex = queueIndex + 1
       setQueueIndex(nextIndex)
-      playTrack(queue[nextIndex], false) 
+      playTrack(queue[nextIndex], false)
     } else {
-        setIsPlaying(false)
-        stopVisualizer()
+      setIsPlaying(false)
+      stopVisualizer()
     }
   }
 
   const handlePrevTrack = () => {
     if (queueIndex > 0) {
-        const prevIndex = queueIndex - 1
-        setQueueIndex(prevIndex)
-        playTrack(queue[prevIndex], false)
+      const prevIndex = queueIndex - 1
+      setQueueIndex(prevIndex)
+      playTrack(queue[prevIndex], false)
     }
   }
 
-const setupAudioGraph = () => {
+  const setupAudioGraph = () => {
     if (audioContextRef.current) return;
     const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextConstructor) return;
-    
+
     try {
       const ctx = new AudioContextConstructor();
       const analyser = ctx.createAnalyser();
@@ -399,12 +392,11 @@ const setupAudioGraph = () => {
         sourceNodeRef.current = source;
       }
 
-      // CRITICAL FIX: Disconnect the source from any ghost contexts before reconnecting
-      try { source.disconnect(); } catch (e) {} 
-      
+      try { source.disconnect(); } catch (e) { }
+
       source.connect(analyser);
       analyser.connect(ctx.destination);
-      
+
       audioContextRef.current = ctx;
       analyserRef.current = analyser;
       dataArrayRef.current = new Uint8Array(analyser.frequencyBinCount);
@@ -412,6 +404,7 @@ const setupAudioGraph = () => {
       console.warn('Audio graph setup safely skipped:', err.message);
     }
   }
+
   const updateVisualizer = () => {
     const analyser = analyserRef.current
     const dataArray = dataArrayRef.current
@@ -421,14 +414,10 @@ const setupAudioGraph = () => {
     if (container) {
       const lowBand = Math.max(1, Math.floor(dataArray.length * 0.35))
       let sum = 0
-      for (let i = 0; i < lowBand; i += 1) {
-        sum += dataArray[i]
-      }
+      for (let i = 0; i < lowBand; i += 1) sum += dataArray[i]
       const energy = sum / (lowBand * 255)
       container.style.setProperty('--hz-energy', energy.toFixed(3))
-      if (ambienceRef.current) {
-        ambienceRef.current.style.setProperty('--hz-energy', energy.toFixed(3))
-      }
+      if (ambienceRef.current) ambienceRef.current.style.setProperty('--hz-energy', energy.toFixed(3))
     }
     rafRef.current = requestAnimationFrame(updateVisualizer)
   }
@@ -454,45 +443,38 @@ const setupAudioGraph = () => {
       rafRef.current = null
     }
     const container = wavesRef.current
-    if (container) {
-      container.style.setProperty('--hz-energy', '0')
-    }
-    if (ambienceRef.current) {
-      ambienceRef.current.style.setProperty('--hz-energy', '0')
-    }
+    if (container) container.style.setProperty('--hz-energy', '0')
+    if (ambienceRef.current) ambienceRef.current.style.setProperty('--hz-energy', '0')
   }
 
   const playTrack = async (track, isNewPlay = true) => {
-
     if (audioRef.current) {
       audioRef.current.pause();
     }
-    
+
     let streamUrl = track.proxy_url || track.audio_url
 
-    // Fetch stream if missing (e.g. from Trending/History list)
     if (!streamUrl && track.webpage_url) {
       setLoading(true)
       try {
         const res = await fetch('http://localhost:5000/api/search', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query: track.webpage_url }),
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: track.webpage_url }),
         })
         const data = await res.json()
         streamUrl = data.proxy_url || data.audio_url
         track = { ...track, ...data }
-      } catch(e) { console.error(e) }
+      } catch (e) { console.error(e) }
       setLoading(false)
     }
 
     if (!streamUrl) return
-    
-if (isNewPlay) recordPlay(track)
+
+    if (isNewPlay) recordPlay(track)
     applyThemeFromImage(track.thumbnail, track)
     setCurrentTrack(track)
 
-    // 2. Set the new source AND force the browser to load it
     audioRef.current.src = streamUrl
     audioRef.current.load()
 
@@ -510,16 +492,15 @@ if (isNewPlay) recordPlay(track)
   }
 
   const addToQueue = (track) => {
-      const newQueue = [...queue, track]
-      setQueue(newQueue)
+    const newQueue = [...queue, track]
+    setQueue(newQueue)
   }
 
   const playFromQueue = (index) => {
-      setQueueIndex(index)
-      playTrack(queue[index], true) 
+    setQueueIndex(index)
+    playTrack(queue[index], true)
   }
 
-  // --- LOGIC: GLOBAL PLAYBACK TOGGLE & KEYBIND ---
   const togglePlayback = async () => {
     if (!audioRef.current) return;
 
@@ -537,11 +518,10 @@ if (isNewPlay) recordPlay(track)
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.code === 'Space') {
-        // Prevent toggle if user is typing in Search Input
         const activeTag = document.activeElement.tagName.toUpperCase();
         if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
 
-        e.preventDefault(); // Stop page scrolling
+        e.preventDefault();
         togglePlayback();
       }
     }
@@ -549,7 +529,6 @@ if (isNewPlay) recordPlay(track)
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isPlaying]);
-
 
   useEffect(() => {
     if (!audioRef.current) return
@@ -585,22 +564,17 @@ if (isNewPlay) recordPlay(track)
     }
   }, [searchProgressTarget])
 
-useEffect(() => {
+  useEffect(() => {
     const pendingTrackRaw = localStorage.getItem('pendingTrack')
     if (!pendingTrackRaw) return
 
     try {
       const pendingTrack = JSON.parse(pendingTrackRaw)
       if (pendingTrack) {
-        // Try to resume the track once on load
         playTrack(pendingTrack).then((played) => {
-          if (played) {
-            // Autoplay succeeded, clean up storage
-            localStorage.removeItem('pendingTrack')
-          } else {
-            // Autoplay was blocked by the browser. 
-            // We clear it to prevent ghost states, letting the user click 'Play' manually.
-            localStorage.removeItem('pendingTrack')
+          localStorage.removeItem('pendingTrack')
+          if (!played) {
+            // autoplay blocked – ok
           }
         })
       }
@@ -611,49 +585,35 @@ useEffect(() => {
 
   const handleAuthMock = () => {
     if (user) {
-      // Log out logic
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.dispatchEvent(new Event("userUpdated"));
       setUser(null);
-      localStorage.removeItem('token'); // Clear the token on logout
     } else {
-      // 3. Redirect to the login page instead of the alert
       navigate('/login');
     }
   };
 
   const handleRegisterMock = () => {
     if (user) {
-      // Log out logic
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.dispatchEvent(new Event("userUpdated"));
       setUser(null);
-      localStorage.removeItem('token'); // Clear the token on logout
     } else {
-      // 3. Redirect to the login page instead of the alert
       navigate('/register');
     }
   };
 
   const handleProfileMock = () => {
-    if (user) {
-      navigate('/profile');
-    } else {
-      navigate('/login');
-    }
-  };
-
-  const handleLogOutMock = () => {
-    if (user) {
-      // Log out logic
-      setUser(null);
-      localStorage.removeItem('token'); // Clear the token on logout
-    } else {
-      // 3. Redirect to the login page instead of the alert
-      alert("Logging out")
-    }
+    if (user) navigate('/profile');
+    else navigate('/login');
   };
 
   const createPlaylist = () => {
     alert("Database not operational")
   }
-  // --- LOGIC: SEARCH ---
+
   const handleSearch = async (e) => {
     e.preventDefault()
     if (!query.trim()) return
@@ -663,36 +623,24 @@ useEffect(() => {
     setSearchProgress(0)
     setSearchProgressTarget(0)
     setIsSearchResultsOpen(true)
-    if (searchRevealTimerRef.current) {
-      clearInterval(searchRevealTimerRef.current)
-      searchRevealTimerRef.current = null
-    }
-    if (searchFetchProgressTimerRef.current) {
-      clearInterval(searchFetchProgressTimerRef.current)
-      searchFetchProgressTimerRef.current = null
-    }
-    if (searchFinalizeProgressTimerRef.current) {
-      clearInterval(searchFinalizeProgressTimerRef.current)
-      searchFinalizeProgressTimerRef.current = null
-    }
+
+    if (searchRevealTimerRef.current) clearInterval(searchRevealTimerRef.current)
+    if (searchFetchProgressTimerRef.current) clearInterval(searchFetchProgressTimerRef.current)
+    if (searchFinalizeProgressTimerRef.current) clearInterval(searchFinalizeProgressTimerRef.current)
 
     searchFetchProgressTimerRef.current = setInterval(() => {
-      setSearchProgressTarget((prev) => {
-        if (prev >= 65) return prev
-        return prev + 2.5
-      })
+      setSearchProgressTarget((prev) => (prev >= 65 ? prev : prev + 2.5))
     }, 120)
 
     try {
-      
       const response = await fetch('http://localhost:5000/api/search', {
-      
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query }),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error)
+
       const normalizedResults = Array.isArray(data)
         ? data
         : Array.isArray(data?.results)
@@ -712,6 +660,7 @@ useEffect(() => {
 
       setSearchResults(normalizedResults)
       setIsSearchResultsOpen(normalizedResults.length > 0)
+
       if (normalizedResults.length > 0) {
         setSearchProgressTarget((prev) => Math.max(prev, 72))
         setVisibleSearchCount(1)
@@ -750,20 +699,13 @@ useEffect(() => {
       }
     } catch (err) {
       console.error(err)
-      if (searchFetchProgressTimerRef.current) {
-        clearInterval(searchFetchProgressTimerRef.current)
-        searchFetchProgressTimerRef.current = null
-      }
-      if (searchFinalizeProgressTimerRef.current) {
-        clearInterval(searchFinalizeProgressTimerRef.current)
-        searchFinalizeProgressTimerRef.current = null
-      }
+      if (searchFetchProgressTimerRef.current) clearInterval(searchFetchProgressTimerRef.current)
+      if (searchFinalizeProgressTimerRef.current) clearInterval(searchFinalizeProgressTimerRef.current)
       setSearchProgressTarget(0)
     }
     finally { setLoading(false) }
   }
 
-  // --- LOGIC: FORMATTER ---
   const formatTime = (time) => {
     if (!time || isNaN(time)) return "0:00"
     const minutes = Math.floor(time / 60)
@@ -881,9 +823,7 @@ useEffect(() => {
           avgB += b
           count += 1
 
-          if (score > best.score) {
-            best = { r, g, b, score }
-          }
+          if (score > best.score) best = { r, g, b, score }
         }
       } catch (err) {
         applyFallbackTheme(track)
@@ -900,9 +840,7 @@ useEffect(() => {
       applyPalette([avgColor, vibrant, vibrant])
     }
 
-    img.onerror = () => {
-      applyFallbackTheme(track)
-    }
+    img.onerror = () => applyFallbackTheme(track)
   }
 
   const themeVars = {
@@ -916,29 +854,13 @@ useEffect(() => {
   return (
     <div className="app-shell h-screen overflow-hidden text-[color:var(--ink)]" style={themeVars}>
       {/* Background Ambience (Pinkwave) */}
-      <div
-        ref={ambienceRef}
-        className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
-      >
+      <div ref={ambienceRef} className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
         <div className="liquid-flow" aria-hidden="true" />
         <div className={`edge-glow ${isPlaying ? 'is-playing' : 'is-paused'}`} aria-hidden="true" />
-        <div
-          className="absolute -left-32 top-10 h-72 w-72 rounded-full blur-[120px]"
-          style={{ backgroundColor: accentEnd, opacity: 0.3 }}
-        />
-        <div
-          className="absolute right-0 top-1/3 h-72 w-72 rounded-full blur-[140px]"
-          style={{ backgroundColor: accentStart, opacity: 0.25 }}
-        />
-        <div
-          className="absolute bottom-0 left-1/4 h-80 w-80 rounded-full blur-[160px]"
-          style={{ backgroundColor: speakerGlow, opacity: 0.2 }}
-        />
-        <div
-          ref={wavesRef}
-          className={`hz-waves hz-liquid ${isPlaying ? 'is-playing' : 'is-paused'}`}
-          aria-hidden="true"
-        >
+        <div className="absolute -left-32 top-10 h-72 w-72 rounded-full blur-[120px]" style={{ backgroundColor: accentEnd, opacity: 0.3 }} />
+        <div className="absolute right-0 top-1/3 h-72 w-72 rounded-full blur-[140px]" style={{ backgroundColor: accentStart, opacity: 0.25 }} />
+        <div className="absolute bottom-0 left-1/4 h-80 w-80 rounded-full blur-[160px]" style={{ backgroundColor: speakerGlow, opacity: 0.2 }} />
+        <div ref={wavesRef} className={`hz-waves hz-liquid ${isPlaying ? 'is-playing' : 'is-paused'}`} aria-hidden="true">
           <div className="hz-spikes" aria-hidden="true" />
           <div className="speaker" aria-hidden="true">
             <div className="speaker__rim" />
@@ -955,20 +877,17 @@ useEffect(() => {
         {/* --- NAVBAR --- */}
         <nav className="nav-shell sticky top-0 z-50 mx-auto w-full max-w-[1600px] rounded-b-3xl border-b border-white/10 bg-[color:var(--panel)]/95 backdrop-blur-md">
           <div className="flex items-center justify-between px-4 py-4 sm:px-5">
-              {/* Logo Section */}
-              <div className="flex items-center gap-3">
-                {/* Replace with <img src="/logo.png" /> if you have it */}
-                <div className="brand-mark h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-300 to-amber-400 flex items-center justify-center font-bold text-black">M</div>
-                <span className="brand-title font-bold tracking-wide text-lg bg-clip-text text-transparent bg-gradient-to-r from-emerald-300 to-amber-200">
-                  {appName}
-                </span>
-              </div>
-              
-              {/* Conditional Brand/Admin Area */}
+            <div className="flex items-center gap-3">
+              <div className="brand-mark h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-300 to-amber-400 flex items-center justify-center font-bold text-black">M</div>
+              <span className="brand-title font-bold tracking-wide text-lg bg-clip-text text-transparent bg-gradient-to-r from-emerald-300 to-amber-200">
+                {appName}
+              </span>
+            </div>
+
             <div className="brand-slogan hidden md:block">
               {user?.role === 'admin' ? (
-                <button 
-                  onClick={() => navigate('/admin')} 
+                <button
+                  onClick={() => navigate('/admin')}
                   className="text-[10px] text-yellow-400 font-bold hover:text-yellow-500 transition-colors border border-yellow-400/30 rounded-full px-4 py-1 bg-yellow-400/10 tracking-[0.1em] uppercase"
                 >
                   Admin Abuse Panel
@@ -980,164 +899,163 @@ useEffect(() => {
               )}
             </div>
 
-              {/* Auth + Theme */}
-              <div className="relative flex items-center gap-3">
-                  {user ? (
-                      <button onClick={handleProfileMock} className="text-xs text-emerald-300 hover:text-emerald-200">
-                      Welcome, {user.userName ? user.userName : 'User'}!
-                      </button>
-                  ) : (
-                      <button onClick={handleAuthMock} className="text-xs text-white/60 hover:text-white">Login</button>
-                  )}
-                  <button
-                    onClick={() => setThemeOpen((prev) => !prev)}
-                    className="rounded-full border border-white/10 bg-white/5 p-2 text-white/60 transition hover:text-white"
-                    aria-label="Open theme settings"
-                  >
-                    <FaSlidersH className="text-sm" />
-                  </button>
-                  {themeOpen && (
-                    <div className="absolute right-0 top-full mt-3 w-64 rounded-2xl border border-white/10 bg-[color:var(--panel)]/95 p-4 text-xs shadow-[0_18px_40px_rgba(0,0,0,0.4)] backdrop-blur">
-                      <p className="text-[10px] uppercase tracking-[0.3em] text-white/40">Theme</p>
-                      <div className="mt-3 space-y-3">
-                        <label className="flex items-center justify-between gap-3">
-                          <span className="text-white/70">Gradient start</span>
-                          <input
-                            type="color"
-                            value={accentStart}
-                            onChange={(e) => setAccentStart(e.target.value)}
-                            className="h-7 w-10 cursor-pointer rounded"
-                          />
-                        </label>
-                        <label className="flex items-center justify-between gap-3">
-                          <span className="text-white/70">Gradient end</span>
-                          <input
-                            type="color"
-                            value={accentEnd}
-                            onChange={(e) => setAccentEnd(e.target.value)}
-                            className="h-7 w-10 cursor-pointer rounded"
-                          />
-                        </label>
-                        <label className="flex items-center justify-between gap-3">
-                          <span className="text-white/70">Speaker glow</span>
-                          <input
-                            type="color"
-                            value={speakerGlow}
-                            onChange={(e) => setSpeakerGlow(e.target.value)}
-                            className="h-7 w-10 cursor-pointer rounded"
-                          />
-                        </label>
-                        <label className="flex items-center justify-between gap-3">
-                          <span className="text-white/70">Intensity</span>
-                          <input
-                            type="range"
-                            min="0"
-                            max="2"
-                            step="0.05"
-                            value={intensity}
-                            onChange={(e) => setIntensity(parseFloat(e.target.value))}
-                            className="h-1 w-24 cursor-pointer appearance-none rounded-full bg-white/20 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
-                          />
-                        </label>
-                      </div>
-                    </div>
-                  )}
-              </div>
+            <div className="relative flex items-center gap-3">
+              {user ? (
+                <button onClick={handleProfileMock} className="text-xs text-emerald-300 hover:text-emerald-200">
+                  Welcome, {user.userName ? user.userName : 'User'}!
+                </button>
+              ) : (
+                <button onClick={handleAuthMock} className="text-xs text-white/60 hover:text-white">Login</button>
+              )}
+
+              <button
+                onClick={() => setThemeOpen((prev) => !prev)}
+                className="rounded-full border border-white/10 bg-white/5 p-2 text-white/60 transition hover:text-white"
+                aria-label="Open theme settings"
+              >
+                <FaSlidersH className="text-sm" />
+              </button>
+
+              {themeOpen && (
+                <div className="absolute right-0 top-full mt-3 w-64 rounded-2xl border border-white/10 bg-[color:var(--panel)]/95 p-4 text-xs shadow-[0_18px_40px_rgba(0,0,0,0.4)] backdrop-blur">
+                  <p className="text-[10px] uppercase tracking-[0.3em] text-white/40">Theme</p>
+                  <div className="mt-3 space-y-3">
+                    <label className="flex items-center justify-between gap-3">
+                      <span className="text-white/70">Gradient start</span>
+                      <input type="color" value={accentStart} onChange={(e) => setAccentStart(e.target.value)} className="h-7 w-10 cursor-pointer rounded" />
+                    </label>
+                    <label className="flex items-center justify-between gap-3">
+                      <span className="text-white/70">Gradient end</span>
+                      <input type="color" value={accentEnd} onChange={(e) => setAccentEnd(e.target.value)} className="h-7 w-10 cursor-pointer rounded" />
+                    </label>
+                    <label className="flex items-center justify-between gap-3">
+                      <span className="text-white/70">Speaker glow</span>
+                      <input type="color" value={speakerGlow} onChange={(e) => setSpeakerGlow(e.target.value)} className="h-7 w-10 cursor-pointer rounded" />
+                    </label>
+                    <label className="flex items-center justify-between gap-3">
+                      <span className="text-white/70">Intensity</span>
+                      <input
+                        type="range"
+                        min="0"
+                        max="2"
+                        step="0.05"
+                        value={intensity}
+                        onChange={(e) => setIntensity(parseFloat(e.target.value))}
+                        className="h-1 w-24 cursor-pointer appearance-none rounded-full bg-white/20 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+                      />
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </nav>
 
-        {/* Main Grid Layout - WIDENED */}
+        {/* Main Grid Layout */}
         <div className="mx-auto grid w-full max-w-[1600px] grid-cols-1 gap-6 px-4 pt-6 sm:px-5 lg:grid-cols-[260px_1fr_340px] lg:pt-8">
-        
-        {/* --- LEFT SIDEBAR (Nav & Auth) --- */}
-        <aside className="hidden flex-col gap-6 lg:flex max-h-[calc(100vh-220px)]">
+
+          {/* --- LEFT SIDEBAR --- */}
+          <aside className="hidden flex-col gap-6 lg:flex max-h-[calc(100vh-220px)]">
             <div className="rounded-3xl border border-white/10 bg-[color:var(--panel)]/80 p-5 backdrop-blur h-full flex flex-col">
-                <div className="flex flex-col items-center gap-3 mb-6">
-                    {/* Logo Image Placeholder */}
-                    <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-pink-500/80 to-rose-500/80 shadow-[0_0_20px_rgba(236,72,153,0.4)] flex items-center justify-center">
-                        <img src="/logo.png" alt="M" className="h-12 w-12 object-contain" onError={(e) => e.target.style.display='none'} />
-                    </div>
-                    <div className="text-center">
-                        <p className="text-lg font-semibold">{appName}</p>
-                        <p className="text-xs text-[color:var(--muted)]">Pinkwave edition</p>
-                    </div>
+              <div className="flex flex-col items-center gap-3 mb-6">
+                <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-pink-500/80 to-rose-500/80 shadow-[0_0_20px_rgba(236,72,153,0.4)] flex items-center justify-center">
+                  <img src="/logo.png" alt="M" className="h-12 w-12 object-contain" onError={(e) => e.target.style.display = 'none'} />
                 </div>
-
-                {/* Login / Auth Logic */}
-                <div className="mb-6 border-b border-white/10 pb-6">
-                    {user ? (
-                        <div className="rounded-xl bg-white/5 p-3 text-center">
-                            <div className="mx-auto h-10 w-10 rounded-full bg-pink-500 flex items-center justify-center font-bold text-black mb-2 uppercase">
-                                {/* Safely grab the first letter */}
-                                {user?.userName ? user.userName.charAt(0) : 'U'}
-                            </div>
-                            <button onClick={() => navigate('/profile')} className="text-sm font-semibold hover:text-pink-200">
-                                {/* Safely display the name */}
-                                {user?.userName || 'My Profile'}
-                            </button>
-                            <button onClick={handleLogOut} className="block w-full text-xs text-pink-400 hover:text-pink-300 mt-1">
-                                Log Out
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-2 gap-2">
-                            <button onClick={() => navigate('/login')} className="rounded-xl bg-pink-500 px-3 py-2 text-xs font-bold text-black hover:bg-pink-400 transition">
-                                Login
-                            </button>
-                            <button onClick={() => navigate('/register')} className="rounded-xl border border-white/10 px-3 py-2 text-xs hover:bg-white/5 transition">
-                                Register
-                            </button>
-                        </div>
-                    )}
+                <div className="text-center">
+                  <p className="text-lg font-semibold">{appName}</p>
+                  <p className="text-xs text-[color:var(--muted)]">Pinkwave edition</p>
                 </div>
+              </div>
 
-                <nav className="space-y-2 text-sm">
-                    {['Home', 'Search', 'Your Library', 'Create Playlist'].map((item) => (
-                    <button
-                        key={item}
-                        onClick={() => {
-                          if (item === 'Home') navigate('/')
-                          if (item === 'Search') {
-                            const searchInput = document.getElementById('landing-search-input')
-                            if (searchInput) {
-                              searchInput.focus()
-                              searchInput.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                            }
-                          }
-                        }}
-                        className="flex w-full items-center justify-between rounded-xl border border-transparent px-3 py-2 text-left transition hover:border-white/10 hover:bg-white/5 group"
-                    >
-                        <span>{item}</span>
-                        <span className="text-xs text-[color:var(--muted)] opacity-0 group-hover:opacity-100 transition">›</span>
+              {/* Login / Auth Logic */}
+              <div className="mb-6 border-b border-white/10 pb-6">
+                {user ? (
+                  <div className="rounded-xl bg-white/5 p-3 text-center">
+
+                    {/* ✅ Avatar in sidebar */}
+                    <div className="mx-auto h-10 w-10 rounded-full overflow-hidden mb-2 border border-white/10 bg-white/5 flex items-center justify-center">
+                      {avatarSrc ? (
+                        <img
+                          src={avatarSrc}
+                          alt="avatar"
+                          className="h-full w-full object-cover"
+                          onError={(e) => {
+                            e.currentTarget.style.display = "none";
+                          }}
+                        />
+                      ) : (
+                        <span className="font-bold text-white uppercase">
+                          {user?.userName ? user.userName.charAt(0) : 'U'}
+                        </span>
+                      )}
+                    </div>
+
+                    <button onClick={() => navigate('/profile')} className="text-sm font-semibold hover:text-pink-200">
+                      {user?.userName || 'My Profile'}
                     </button>
-                    ))}
-                </nav>
+                    <button onClick={handleLogOut} className="block w-full text-xs text-pink-400 hover:text-pink-300 mt-1">
+                      Log Out
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    <button onClick={() => navigate('/login')} className="rounded-xl bg-pink-500 px-3 py-2 text-xs font-bold text-black hover:bg-pink-400 transition">
+                      Login
+                    </button>
+                    <button onClick={() => navigate('/register')} className="rounded-xl border border-white/10 px-3 py-2 text-xs hover:bg-white/5 transition">
+                      Register
+                    </button>
+                  </div>
+                )}
+              </div>
 
-                <div className="mt-8 flex-1">
-                    <div className="flex items-center justify-between">
-                        <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">Playlists</p>
-                        <button onClick={createPlaylist}><FaPlus className="text-[12px] text-white/40 cursor-pointer hover:text-white" /></button>
-                    </div>
-                    <div className="mt-3 space-y-1 text-sm text-[color:var(--muted)]">
-                        {playlists.map((list) => (
-                            <div key={list} className="rounded-lg px-2 py-1.5 transition hover:bg-white/5 hover:text-white cursor-pointer truncate">
-                                {list}
-                            </div>
-                        ))}
-                    </div>
+              <nav className="space-y-2 text-sm">
+                {['Home', 'Search', 'Your Library', 'Create Playlist'].map((item) => (
+                  <button
+                    key={item}
+                    onClick={() => {
+                      if (item === 'Home') navigate('/')
+                      if (item === 'Search') {
+                        const searchInput = document.getElementById('landing-search-input')
+                        if (searchInput) {
+                          searchInput.focus()
+                          searchInput.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                        }
+                      }
+                    }}
+                    className="flex w-full items-center justify-between rounded-xl border border-transparent px-3 py-2 text-left transition hover:border-white/10 hover:bg-white/5 group"
+                  >
+                    <span>{item}</span>
+                    <span className="text-xs text-[color:var(--muted)] opacity-0 group-hover:opacity-100 transition">›</span>
+                  </button>
+                ))}
+              </nav>
+
+              <div className="mt-8 flex-1">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">Playlists</p>
+                  <button onClick={createPlaylist}><FaPlus className="text-[12px] text-white/40 cursor-pointer hover:text-white" /></button>
                 </div>
+                <div className="mt-3 space-y-1 text-sm text-[color:var(--muted)]">
+                  {playlists.map((list) => (
+                    <div key={list} className="rounded-lg px-2 py-1.5 transition hover:bg-white/5 hover:text-white cursor-pointer truncate">
+                      {list}
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
-        </aside>
+          </aside>
 
-        {/* --- MIDDLE CONTENT (Search & Feed) --- */}
-        <main className="min-w-0 space-y-6 overflow-y-auto pr-1 custom-scrollbar max-h-[calc(100vh-220px)]">
-          <header className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.4em] text-[color:var(--muted)]">Text</p>
-              <h1 className="mt-2 text-3xl font-semibold">Good evening, {user ? user.userName : 'Guest'}</h1>
-            </div>
-            
-            <form onSubmit={handleSearch} className="flex w-full items-center gap-3 relative group sm:w-auto">
+          {/* --- MIDDLE CONTENT --- */}
+          <main className="min-w-0 space-y-6 overflow-y-auto pr-1 custom-scrollbar max-h-[calc(100vh-220px)]">
+            <header className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.4em] text-[color:var(--muted)]">Text</p>
+                <h1 className="mt-2 text-3xl font-semibold">Good evening, {user ? user.userName : 'Guest'}</h1>
+              </div>
+
+              <form onSubmit={handleSearch} className="flex w-full items-center gap-3 relative group sm:w-auto">
                 <FaSearch className="absolute right-5  text-white/30 group-focus-within:text-pink-500" />
                 <input
                   id="landing-search-input"
@@ -1147,331 +1065,317 @@ useEffect(() => {
                   className="w-full rounded-full border border-white/10 bg-white/5 pl-10 pr-4 py-2 text-sm text-white placeholder:text-[color:var(--muted)] focus:border-pink-500/50 focus:outline-none sm:w-64 sm:focus:w-80 transition-all"
                   placeholder={loading ? "Searching..." : "Type song name or URL..."}
                 />
-            </form>
-          </header>
+              </form>
+            </header>
 
-          {/* Search Results */}
-          {loading && (
-            <section className="rounded-3xl border border-pink-500/20 bg-gradient-to-br from-pink-500/10 via-purple-900/10 to-transparent p-5 sm:p-6">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-xl font-semibold">Searching...</h2>
-                <span className="text-xs text-pink-300 animate-pulse">{Math.round(searchProgress)}%</span>
-              </div>
+            {/* Search Results */}
+            {loading && (
+              <section className="rounded-3xl border border-pink-500/20 bg-gradient-to-br from-pink-500/10 via-purple-900/10 to-transparent p-5 sm:p-6">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-xl font-semibold">Searching...</h2>
+                  <span className="text-xs text-pink-300 animate-pulse">{Math.round(searchProgress)}%</span>
+                </div>
 
-              <div className="mb-4 h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-pink-400 transition-all duration-200"
-                  style={{ width: `${Math.max(0, Math.min(100, searchProgress))}%` }}
-                />
-              </div>
+                <div className="mb-4 h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
+                  <div className="h-full rounded-full bg-pink-400 transition-all duration-200" style={{ width: `${Math.max(0, Math.min(100, searchProgress))}%` }} />
+                </div>
 
-              <div className="grid gap-4">
-                {[0, 1, 2].map((item) => (
-                  <div key={item} className="min-w-0 flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 md:flex-row md:items-center animate-pulse">
-                    <div className="h-24 w-24 shrink-0 rounded-2xl bg-white/10" />
-                    <div className="min-w-0 flex-1">
-                      <div className="h-4 w-2/3 rounded bg-white/10" />
-                      <div className="mt-3 h-3 w-1/2 rounded bg-white/10" />
+                <div className="grid gap-4">
+                  {[0, 1, 2].map((item) => (
+                    <div key={item} className="min-w-0 flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 md:flex-row md:items-center animate-pulse">
+                      <div className="h-24 w-24 shrink-0 rounded-2xl bg-white/10" />
+                      <div className="min-w-0 flex-1">
+                        <div className="h-4 w-2/3 rounded bg-white/10" />
+                        <div className="mt-3 h-3 w-1/2 rounded bg-white/10" />
+                      </div>
+                      <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+                        <div className="h-9 w-full rounded-full bg-white/10 sm:w-24" />
+                        <div className="h-9 w-full rounded-full bg-white/10 sm:w-24" />
+                      </div>
                     </div>
-                    <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
-                      <div className="h-9 w-full rounded-full bg-white/10 sm:w-24" />
-                      <div className="h-9 w-full rounded-full bg-white/10 sm:w-24" />
-                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {searchResults.length > 0 && (
+              <section className="rounded-3xl border border-pink-500/20 bg-gradient-to-br from-pink-500/10 via-purple-900/10 to-transparent p-5 sm:p-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-xl font-semibold">Search results</h2>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-pink-300">{searchResults.length} found</span>
+                    {visibleSearchCount < searchResults.length && (
+                      <span className="text-xs text-pink-300">{Math.round(searchProgress)}%</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setIsSearchResultsOpen((prev) => !prev)}
+                      className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80 transition hover:bg-white/10"
+                    >
+                      {isSearchResultsOpen ? 'Hide' : 'Show'}
+                    </button>
                   </div>
-                ))}
+                </div>
+
+                {isSearchResultsOpen && (
+                  <div className="grid gap-4">
+                    {searchResults.slice(0, visibleSearchCount || searchResults.length).map((result, index) => (
+                      <div key={`${result.webpage_url || result.title || 'result'}-${index}`} className="min-w-0 flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 md:flex-row md:items-center animate-in fade-in slide-in-from-bottom-2 duration-300" style={{ animationDelay: `${index * 60}ms` }}>
+                        {result.thumbnail ? (
+                          <img src={result.thumbnail} alt="Thumbnail" className="h-24 w-24 shrink-0 rounded-2xl object-cover shadow-[0_10px_30px_rgba(236,72,153,0.25)]" />
+                        ) : (
+                          <div className="h-24 w-24 shrink-0 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500" />
+                        )}
+
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-lg font-semibold">{result.title || 'Unknown title'}</p>
+                          <p className="mt-1 truncate text-sm text-white/60">{result.artist || 'Unknown artist'}</p>
+                        </div>
+
+                        <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+                          <button
+                            onClick={() => playTrack(result)}
+                            className="flex w-full items-center justify-center gap-2 rounded-full bg-[#00ff00] px-5 py-2 text-sm font-bold text-black transition hover:scale-105 hover:bg-[#00cc00] sm:w-auto"
+                          >
+                            <FaPlay /> Play
+                          </button>
+                          <button
+                            onClick={() => addToQueue(result)}
+                            className="flex w-full items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10 sm:w-auto"
+                          >
+                            <MdQueueMusic /> Queue
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* Featured / Trending */}
+            <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-pink-500/10 via-transparent to-transparent p-5 sm:p-6 overflow-hidden">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold">Trending Now</h2>
+                <button className="text-xs text-pink-400 hover:text-white transition">Czech Top 8</button>
+              </div>
+
+              <div className="grid min-w-0 gap-4 min-[1180px]:grid-cols-2">
+                {featuredSongs.length > 0 ? featuredSongs.slice(0, 8).map((song, i) => (
+                  <div
+                    key={i}
+                    onClick={() => playTrack(song)}
+                    className="group flex w-full min-w-0 max-w-full flex-col gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 transition hover:border-pink-500/30 hover:bg-white/10 cursor-pointer min-[1180px]:flex-row min-[1180px]:items-center min-[1180px]:gap-4">
+                    <div className="relative h-16 w-16 min-w-[4rem]">
+                      <img src={song.thumbnail} className="h-full w-full rounded-xl object-cover" alt="art" />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition rounded-xl">
+                        <FaPlay className="text-white" />
+                      </div>
+                    </div>
+
+                    <div className="min-w-0 flex-1 overflow-hidden">
+                      <p className="text-sm font-semibold truncate">{song.title}</p>
+                      <p className="text-xs text-[color:var(--muted)] truncate">{song.artist}</p>
+                    </div>
+
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        addToQueue(song);
+                      }}
+                      className="mt-1 inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/10 min-[1180px]:mt-0 min-[1180px]:w-auto min-[1180px]:shrink-0 min-[1180px]:px-4 min-[1180px]:text-sm"
+                    >
+                      <MdQueueMusic size={18} /> Queue
+                    </button>
+                  </div>
+                )) : (
+                  <div className="col-span-2 py-8 text-center text-white/30 text-sm">Loading trends...</div>
+                )}
               </div>
             </section>
-          )}
 
-          {searchResults.length > 0 && (
-            <section className="rounded-3xl border border-pink-500/20 bg-gradient-to-br from-pink-500/10 via-purple-900/10 to-transparent p-5 sm:p-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-xl font-semibold">Search results</h2>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-pink-300">{searchResults.length} found</span>
-                  {visibleSearchCount < searchResults.length && (
-                    <span className="text-xs text-pink-300">{Math.round(searchProgress)}%</span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setIsSearchResultsOpen((prev) => !prev)}
-                    className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80 transition hover:bg-white/10"
-                  >
-                    {isSearchResultsOpen ? 'Hide' : 'Show'}
-                  </button>
-                </div>
+            {/* Quick Picks */}
+            <section className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold">Quick picks (Most Played)</h3>
+                <button className="text-sm text-[color:var(--muted)] hover:text-white">See all</button>
               </div>
 
-              {isSearchResultsOpen && (
-                <div className="grid gap-4">
-                  {searchResults.slice(0, visibleSearchCount || searchResults.length).map((result, index) => (
-                    <div key={`${result.webpage_url || result.title || 'result'}-${index}`} className="min-w-0 flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 md:flex-row md:items-center animate-in fade-in slide-in-from-bottom-2 duration-300" style={{ animationDelay: `${index * 60}ms` }}>
-                      {result.thumbnail ? (
-                        <img src={result.thumbnail} alt="Thumbnail" className="h-24 w-24 shrink-0 rounded-2xl object-cover shadow-[0_10px_30px_rgba(236,72,153,0.25)]" />
-                      ) : (
-                        <div className="h-24 w-24 shrink-0 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500" />
-                      )}
-
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-lg font-semibold">{result.title || 'Unknown title'}</p>
-                        <p className="mt-1 truncate text-sm text-white/60">{result.artist || 'Unknown artist'}</p>
+              {quickPicks.length === 0 ? (
+                <div className="p-8 rounded-2xl border border-dashed border-white/10 text-center text-white/30 text-sm">
+                  Play some music to see your history here!
+                </div>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {quickPicks.map((item, i) => (
+                    <div key={i} className="group flex items-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-3 transition hover:border-pink-500/30">
+                      <div className="h-16 w-16 rounded-2xl bg-white/10 overflow-hidden relative">
+                        <img src={item.thumbnail} className="h-full w-full object-cover" alt="" />
+                        <button
+                          onClick={() => playTrack(item)}
+                          className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition">
+                          <FaPlay className="text-white" />
+                        </button>
                       </div>
-
-                      <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
-                        <button
-                          onClick={() => playTrack(result)}
-                          className="flex w-full items-center justify-center gap-2 rounded-full bg-[#00ff00] px-5 py-2 text-sm font-bold text-black transition hover:scale-105 hover:bg-[#00cc00] sm:w-auto"
-                        >
-                          <FaPlay /> Play
-                        </button>
-                        <button
-                          onClick={() => addToQueue(result)}
-                          className="flex w-full items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10 sm:w-auto"
-                        >
-                          <MdQueueMusic /> Queue
-                        </button>
+                      <div className="flex-1 overflow-hidden">
+                        <p className="text-sm font-semibold truncate">{item.title}</p>
+                        <p className="text-xs text-[color:var(--muted)] truncate">{item.artist}</p>
+                        <p className="text-[10px] text-pink-400 mt-1">{item.count} plays</p>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
             </section>
-          )}
+          </main>
 
-          {/* Featured / Trending Section */}
-          <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-pink-500/10 via-transparent to-transparent p-5 sm:p-6 overflow-hidden">
-             <div className="flex items-center justify-between mb-4">
-                 <h2 className="text-xl font-semibold">Trending Now</h2>
-                 <button className="text-xs text-pink-400 hover:text-white transition">Czech Top 8</button>
-             </div>
-             
-             <div className="grid min-w-0 gap-4 min-[1180px]:grid-cols-2">
-                   {featuredSongs.length > 0 ? featuredSongs.slice(0, 8).map((song, i) => (
-                <div 
-                  key={i} 
-                  onClick={() => playTrack(song)} 
-                  className="group flex w-full min-w-0 max-w-full flex-col gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 transition hover:border-pink-500/30 hover:bg-white/10 cursor-pointer min-[1180px]:flex-row min-[1180px]:items-center min-[1180px]:gap-4">
-                    {/* 1. Thumbnail */}
-                    <div className="relative h-16 w-16 min-w-[4rem]">
-                        <img src={song.thumbnail} className="h-full w-full rounded-xl object-cover" alt="art" />
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition rounded-xl">
-                            <FaPlay className="text-white" />
-                        </div>
+          {/* --- RIGHT SIDEBAR --- */}
+          <aside className="hidden space-y-6 xl:flex xl:flex-col h-[calc(100vh-220px)] sticky top-24">
+            <TokenCompartment
+              tokenWallet={tokenWallet}
+              onRefresh={loadTokenWallet}
+              loading={tokenLoading}
+              isLoggedIn={Boolean(user)}
+            />
+
+            <div className="rounded-3xl border border-white/10 bg-[color:var(--panel)]/80 p-5 shrink-0">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">Friend activity</h3>
+                <button className="text-xs text-[color:var(--muted)]">Settings</button>
+              </div>
+              <div className="mt-4 space-y-4">
+                {friends.map((friend) => (
+                  <div key={friend.name} className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500" />
+                    <div className="overflow-hidden">
+                      <p className="text-sm font-semibold">{friend.name}</p>
+                      <p className="text-xs text-[color:var(--muted)] truncate">
+                        {friend.track} • {friend.artist}
+                      </p>
                     </div>
-
-                    {/* 2. Text Content (Added flex-1 to push the button right) */}
-                    <div className="min-w-0 flex-1 overflow-hidden">
-                        <p className="text-sm font-semibold truncate">{song.title}</p>
-                        <p className="text-xs text-[color:var(--muted)] truncate">{song.artist}</p>
-                    </div>
-
-                    {/* 3. Queue Button */}
-                    <button 
-                        onClick={(e) => {
-                            e.stopPropagation(); // Stops the parent div from firing playTrack()
-                            addToQueue(song);    // Swapped searchResult for the mapped 'song'
-                        }}
-                      className="mt-1 inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/10 min-[1180px]:mt-0 min-[1180px]:w-auto min-[1180px]:shrink-0 min-[1180px]:px-4 min-[1180px]:text-sm"
-                    >
-                        <MdQueueMusic size={18} /> Queue
-                    </button>
-                </div>
-                 )) : (
-                    <div className="col-span-2 py-8 text-center text-white/30 text-sm">Loading trends...</div>
-                 )}
-             </div>
-          </section>
-
-          {/* Quick Picks (Most Played from LocalStorage) */}
-          <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Quick picks (Most Played)</h3>
-              <button className="text-sm text-[color:var(--muted)] hover:text-white">See all</button>
-            </div>
-            
-            {quickPicks.length === 0 ? (
-                <div className="p-8 rounded-2xl border border-dashed border-white/10 text-center text-white/30 text-sm">
-                    Play some music to see your history here!
-                </div>
-            ) : (
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {quickPicks.map((item, i) => (
-                    <div key={i} className="group flex items-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-3 transition hover:border-pink-500/30">
-                    <div className="h-16 w-16 rounded-2xl bg-white/10 overflow-hidden relative">
-                          <img src={item.thumbnail} className="h-full w-full object-cover" alt="" />
-                          <button 
-                            onClick={() => playTrack(item)}
-                            className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition">
-                            <FaPlay className="text-white" />
-                          </button>
-                    </div>
-                    <div className="flex-1 overflow-hidden">
-                        <p className="text-sm font-semibold truncate">{item.title}</p>
-                        <p className="text-xs text-[color:var(--muted)] truncate">{item.artist}</p>
-                        <p className="text-[10px] text-pink-400 mt-1">{item.count} plays</p>
-                    </div>
-                    </div>
-                ))}
-                </div>
-            )}
-          </section>
-        </main>
-
-        {/* --- RIGHT SIDEBAR (Queue & Friends) --- */}
-        <aside className="hidden space-y-6 xl:flex xl:flex-col h-[calc(100vh-220px)] sticky top-24">
-
-          <TokenCompartment
-            tokenWallet={tokenWallet}
-            onRefresh={loadTokenWallet}
-            loading={tokenLoading}
-            isLoggedIn={Boolean(user)}
-          />
-          
-          {/* Friends Widget */}
-          <div className="rounded-3xl border border-white/10 bg-[color:var(--panel)]/80 p-5 shrink-0">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Friend activity</h3>
-              <button className="text-xs text-[color:var(--muted)]">Settings</button>
-            </div>
-            <div className="mt-4 space-y-4">
-              {friends.map((friend) => (
-                <div key={friend.name} className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500" />
-                  <div className="overflow-hidden">
-                    <p className="text-sm font-semibold">{friend.name}</p>
-                    <p className="text-xs text-[color:var(--muted)] truncate">
-                      {friend.track} • {friend.artist}
-                    </p>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
 
-          {/* Queue Widget (Dynamic) */}
-          <div className="rounded-3xl border border-white/10 bg-[color:var(--panel)]/80 p-5 flex-1 flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between mb-2">
+            <div className="rounded-3xl border border-white/10 bg-[color:var(--panel)]/80 p-5 flex-1 flex flex-col overflow-hidden">
+              <div className="flex items-center justify-between mb-2">
                 <p className="text-xs uppercase tracking-[0.3em] text-[color:var(--muted)]">Queue</p>
                 <span className="text-[10px] text-white/30">{queue.length} tracks</span>
-            </div>
-            
-            <div className="mt-2 flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+              </div>
+
+              <div className="mt-2 flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
                 {queue.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-white/20 text-center">
-                        <MdQueueMusic className="text-3xl mb-2 opacity-50" />
-                        <p className="text-xs">Queue is empty</p>
-                    </div>
+                  <div className="h-full flex flex-col items-center justify-center text-white/20 text-center">
+                    <MdQueueMusic className="text-3xl mb-2 opacity-50" />
+                    <p className="text-xs">Queue is empty</p>
+                  </div>
                 ) : (
-                    queue.map((track, i) => (
-                        <div 
-                            key={i} 
-                            onClick={() => playFromQueue(i)}
-                            className={`flex items-center gap-3 p-2 rounded-xl transition cursor-pointer ${i === queueIndex ? 'bg-pink-500/10 border border-pink-500/20' : 'hover:bg-white/5 border border-transparent'}`}>
-                            <div className="h-10 w-10 rounded-lg overflow-hidden shrink-0 relative">
-                                <img src={track.thumbnail} className={`h-full w-full object-cover ${i === queueIndex ? 'opacity-40' : ''}`} alt="" />
-                                {i === queueIndex && (
-                                    <div className="absolute inset-0 flex items-center justify-center">
-                                        <div className="w-1 h-3 bg-[#00ff00] animate-pulse mx-[1px]"></div>
-                                        <div className="w-1 h-4 bg-[#00ff00] animate-pulse mx-[1px]"></div>
-                                        <div className="w-1 h-2 bg-[#00ff00] animate-pulse mx-[1px]"></div>
-                                    </div>
-                                )}
-                            </div>
-                            <div className="overflow-hidden">
-                                <p className={`text-xs font-bold truncate ${i === queueIndex ? 'text-[#00ff00]' : 'text-white'}`}>{track.title}</p>
-                                <p className="text-[10px] text-[color:var(--muted)] truncate">{track.artist}</p>
-                            </div>
-                        </div>
-                    ))
+                  queue.map((track, i) => (
+                    <div
+                      key={i}
+                      onClick={() => playFromQueue(i)}
+                      className={`flex items-center gap-3 p-2 rounded-xl transition cursor-pointer ${i === queueIndex ? 'bg-pink-500/10 border border-pink-500/20' : 'hover:bg-white/5 border border-transparent'}`}>
+                      <div className="h-10 w-10 rounded-lg overflow-hidden shrink-0 relative">
+                        <img src={track.thumbnail} className={`h-full w-full object-cover ${i === queueIndex ? 'opacity-40' : ''}`} alt="" />
+                        {i === queueIndex && (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="w-1 h-3 bg-[#00ff00] animate-pulse mx-[1px]"></div>
+                            <div className="w-1 h-4 bg-[#00ff00] animate-pulse mx-[1px]"></div>
+                            <div className="w-1 h-2 bg-[#00ff00] animate-pulse mx-[1px]"></div>
+                          </div>
+                        )}
+                      </div>
+                      <div className="overflow-hidden">
+                        <p className={`text-xs font-bold truncate ${i === queueIndex ? 'text-[#00ff00]' : 'text-white'}`}>{track.title}</p>
+                        <p className="text-[10px] text-[color:var(--muted)] truncate">{track.artist}</p>
+                      </div>
+                    </div>
+                  ))
                 )}
+              </div>
             </div>
-          </div>
-        </aside>
-      </div>
+          </aside>
+        </div>
 
-      {/* --- BOTTOM PLAYER --- */}
-      <div className="fixed bottom-0 left-0 right-0 z-[100] px-4 pb-3 sm:px-5 sm:pb-4">
-        <div className="mx-auto max-w-[1600px] rounded-3xl border border-white/10 bg-[color:var(--panel)]/95 px-4 py-3 backdrop-blur sm:px-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-          
-          {/* Track Info */}
-          <div className="flex items-center gap-4 w-full sm:w-1/4 sm:min-w-[200px]">
-            {currentTrack.thumbnail ? (
-                <div className="h-12 w-12 rounded-2xl overflow-hidden relative group">
-                      <img src={currentTrack.thumbnail} className="h-full w-full object-cover" alt="" />
-                      <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition"></div>
-                </div>
-            ) : (
-                <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center">
+        {/* --- BOTTOM PLAYER --- */}
+        <div className="fixed bottom-0 left-0 right-0 z-[100] px-4 pb-3 sm:px-5 sm:pb-4">
+          <div className="mx-auto max-w-[1600px] rounded-3xl border border-white/10 bg-[color:var(--panel)]/95 px-4 py-3 backdrop-blur sm:px-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+
+              <div className="flex items-center gap-4 w-full sm:w-1/4 sm:min-w-[200px]">
+                {currentTrack.thumbnail ? (
+                  <div className="h-12 w-12 rounded-2xl overflow-hidden relative group">
+                    <img src={currentTrack.thumbnail} className="h-full w-full object-cover" alt="" />
+                    <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition"></div>
+                  </div>
+                ) : (
+                  <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center">
                     <MdQueueMusic className="text-white/50" />
+                  </div>
+                )}
+                <div className="overflow-hidden">
+                  <p className="text-sm font-semibold truncate cursor-pointer hover:underline">{currentTrack.title}</p>
+                  <p className="text-xs text-[color:var(--muted)] truncate">{currentTrack.artist}</p>
                 </div>
-            )}
-            <div className="overflow-hidden">
-              <p className="text-sm font-semibold truncate cursor-pointer hover:underline">{currentTrack.title}</p>
-              <p className="text-xs text-[color:var(--muted)] truncate">{currentTrack.artist}</p>
-            </div>
-            <FaHeart className="ml-2 text-white/20 hover:text-pink-500 transition cursor-pointer" />
-          </div>
+                <FaHeart className="ml-2 text-white/20 hover:text-pink-500 transition cursor-pointer" />
+              </div>
 
-          {/* Controls */}
-           <div className="flex flex-col items-center w-full sm:flex-1 sm:max-w-lg">
-             <div className="flex items-center gap-6 mb-1">
-                <button className="text-[color:var(--muted)] hover:text-white" onClick={handlePrevTrack}><FaStepBackward className="text-[#00ff00]"/></button>
-                
-                <button 
+              <div className="flex flex-col items-center w-full sm:flex-1 sm:max-w-lg">
+                <div className="flex items-center gap-6 mb-1">
+                  <button className="text-[color:var(--muted)] hover:text-white" onClick={handlePrevTrack}><FaStepBackward className="text-[#00ff00]" /></button>
+
+                  <button
                     onClick={togglePlayback}
                     className="relative z-0 rounded-full bg-[#00ff00] flex items-center justify-center shadow-[0_0_15px_rgba(0,255,0,0.4)] hover:scale-110 transition text-black">
-                    {isPlaying ? (<FaPause style={iconStyle} className="relative z-10 text-black fill-current"/>) 
-                                : (<FaPlay style={iconStyle} className="ml-1 relative z-10 text-black fill-current" />)}
-                </button>
-                
-                <button className="text-[color:var(--muted)] hover:text-white" onClick={handleNextTrack}><FaStepForward className="text-[#00ff00]"/></button>
-             </div>
-             
-             {/* Progress Bar */}
-             <div className="w-full flex items-center gap-3 text-xs sm:text-[15px] text-pink-500 font-bold ">
-                 <span>{formatTime(currentTime)}</span>
-                 <div className="flex-1 h-1 bg-white/10 rounded-full relative group cursor-pointer">
-                     <div 
-                         className="absolute top-0 left-0 h-full bg-[#00ff00] rounded-full group-hover:bg-[#00cc00]" 
-                         style={{ width: `${(currentTime / duration) * 100}%` }}>
-                     </div>
-                     <input 
-                        type="range" 
-                        min="0" 
-                        max={duration || 100} 
-                        value={currentTime}
-                        onChange={(e) => {
-                            const val = Number(e.target.value);
-                            audioRef.current.currentTime = val;
-                            setCurrentTime(val);
-                        }}
-                        className="absolute inset-0 w-full opacity-0 cursor-pointer" 
-                    />
-                 </div>
-                 <span>{formatTime(duration)}</span>
-             </div>
-          </div>
+                    {isPlaying ? (<FaPause style={iconStyle} className="relative z-10 text-black fill-current" />)
+                      : (<FaPlay style={iconStyle} className="ml-1 relative z-10 text-black fill-current" />)}
+                  </button>
 
-          {/* Volume */}
-          <div className="hidden items-center gap-3 w-1/4 justify-end sm:flex">
-            <FaVolumeUp className="text-[color:var(--muted)]" />
-            <input 
-                type="range" 
-                min="0" 
-                max="1" 
-                step="0.05" 
-                value={volume} 
-                onChange={(e) => {
-                const val = parseFloat(e.target.value)
-                setVolume(val)
-                }}
-                className="w-24 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
-            />
-          </div>
+                  <button className="text-[color:var(--muted)] hover:text-white" onClick={handleNextTrack}><FaStepForward className="text-[#00ff00]" /></button>
+                </div>
+
+                <div className="w-full flex items-center gap-3 text-xs sm:text-[15px] text-pink-500 font-bold ">
+                  <span>{formatTime(currentTime)}</span>
+                  <div className="flex-1 h-1 bg-white/10 rounded-full relative group cursor-pointer">
+                    <div
+                      className="absolute top-0 left-0 h-full bg-[#00ff00] rounded-full group-hover:bg-[#00cc00]"
+                      style={{ width: `${(currentTime / duration) * 100}%` }}>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max={duration || 100}
+                      value={currentTime}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        audioRef.current.currentTime = val;
+                        setCurrentTime(val);
+                      }}
+                      className="absolute inset-0 w-full opacity-0 cursor-pointer"
+                    />
+                  </div>
+                  <span>{formatTime(duration)}</span>
+                </div>
+              </div>
+
+              <div className="hidden items-center gap-3 w-1/4 justify-end sm:flex">
+                <FaVolumeUp className="text-[color:var(--muted)]" />
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={volume}
+                  onChange={(e) => setVolume(parseFloat(e.target.value))}
+                  className="w-24 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+                />
+              </div>
+
+            </div>
           </div>
         </div>
-      </div>
+
       </div>
     </div>
   )
