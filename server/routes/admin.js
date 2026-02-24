@@ -46,7 +46,7 @@ router.patch('/users/:id/role', [auth, admin], async (req, res) => {
       return res.status(400).json({ message: "You cannot demote yourself!" });
     }
 
-    userToUpdate.role = userToUpdate.role === 'admin' ? 'user' : 'admin';
+    userToUpdate.role = userToUpdate.role === 'admin' || 'owner' ? 'user' : 'admin';
     await userToUpdate.save();
     
     res.json({ message: "Role updated", user: userToUpdate });
@@ -84,7 +84,7 @@ router.patch('/users/:id/token', [auth, admin], async (req, res) => {
       return res.status(400).json({ message: 'delta must be a non-zero integer' });
     }
 
-    if (Math.abs(delta) > 100000) {
+    if (Math.abs(delta) > 1000000) {
       return res.status(400).json({ message: 'delta too large' });
     }
 

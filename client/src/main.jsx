@@ -42,7 +42,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/register" element={<Register />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/search" element={<SearchResults />} />
-        <Route path="/admin" element={user?.role === 'admin' ? <AdminAbuse /> : <Navigate to="/" />} />
+        <Route path="/admin" element={user?.role === 'admin' || 'owner' ? <AdminAbuse /> : <Navigate to="/" />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>,

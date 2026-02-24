@@ -885,7 +885,7 @@ function App() {
             </div>
 
             <div className="brand-slogan hidden md:block">
-              {user?.role === 'admin' ? (
+              {user?.role === 'admin' ||user?.role === 'owner' ? (
                 <button
                   onClick={() => navigate('/admin')}
                   className="text-[10px] text-yellow-400 font-bold hover:text-yellow-500 transition-colors border border-yellow-400/30 rounded-full px-4 py-1 bg-yellow-400/10 tracking-[0.1em] uppercase"
@@ -920,6 +920,10 @@ function App() {
                 <div className="absolute right-0 top-full mt-3 w-64 rounded-2xl border border-white/10 bg-[color:var(--panel)]/95 p-4 text-xs shadow-[0_18px_40px_rgba(0,0,0,0.4)] backdrop-blur">
                   <p className="text-[10px] uppercase tracking-[0.3em] text-white/40">Theme</p>
                   <div className="mt-3 space-y-3">
+                    <label className="flex items-center justify-between gap-3">
+                      <span className="text-white/70">Turn off</span>
+                      <button className="h-7 w-10 cursor-pointer rounded " onClick={stopVisualizer}>Stop</button> 
+                    </label>
                     <label className="flex items-center justify-between gap-3">
                       <span className="text-white/70">Gradient start</span>
                       <input type="color" value={accentStart} onChange={(e) => setAccentStart(e.target.value)} className="h-7 w-10 cursor-pointer rounded" />
