@@ -9,12 +9,28 @@ import TokenCompartment from './components/TokenCompartment'
 // Add this to your CSS or a style tag to force icons to show
 const iconStyle = { display: 'inline-block', visibility: 'visible', opacity: 1 };
 
-// --- Mock Data for Static UI Elements ---
-const friends = [
-  { name: 'Zoe', track: 'Pink Mirage', artist: 'Lumen' },
-  { name: 'Kai', track: 'Aria', artist: 'Nightcaps' },
-  { name: 'Mira', track: 'Light Trails', artist: 'Glasswave' },
-]
+const DEFAULT_TOKEN_WALLET = {
+  symbol: 'MUZR',
+  balance: 0,
+  totalEarned: 0,
+  pendingQualifiedSeconds: 0,
+  qualifiedSecondsPerToken: 180,
+  remainingSecondsToNextToken: 180,
+  remainingMinutesToNextToken: 3,
+  estimatedPendingTokens: 0,
+  rewardedSecondsToday: 0,
+  dailyRemainingSeconds: 0,
+  dailyListenSecondsToday: 0,
+  dailyCapSeconds: 7200,
+  capProgressPercent: 0,
+  streakDays: 0,
+  suspiciousScore: 0,
+  progressToNextToken: 0,
+  tier: { name: 'Starter', multiplierHint: '+10% max streak' },
+  quests: [],
+  spendCatalog: [],
+  recentClaims: []
+}
 
 function App() {
   const [appName] = useState('Muzeer')
@@ -59,16 +75,8 @@ function App() {
   const [quickPicks, setQuickPicks] = useState([]) // Most Played
   const [loading, setLoading] = useState(false)
   const [tokenLoading, setTokenLoading] = useState(false)
-  const [tokenWallet, setTokenWallet] = useState({
-    symbol: 'MUZR',
-    balance: 0,
-    totalEarned: 0,
-    pendingQualifiedSeconds: 0,
-    estimatedPendingTokens: 0,
-    rewardedSecondsToday: 0,
-    dailyRemainingSeconds: 0,
-    recentClaims: []
-  })
+  const [tokenWallet, setTokenWallet] = useState(DEFAULT_TOKEN_WALLET)
+  const [tokenLeaderboard, setTokenLeaderboard] = useState([])
 
   // --- Theme State ---
   const [themeOpen, setThemeOpen] = useState(false)
@@ -178,9 +186,23 @@ function App() {
             balance: typeof tokenData.balance === 'number' ? tokenData.balance : prev.balance,
             totalEarned: typeof tokenData.totalEarned === 'number' ? tokenData.totalEarned : prev.totalEarned,
             pendingQualifiedSeconds: typeof tokenData.pendingQualifiedSeconds === 'number' ? tokenData.pendingQualifiedSeconds : prev.pendingQualifiedSeconds,
-            estimatedPendingTokens: Number(((tokenData.pendingQualifiedSeconds || 0) / 180).toFixed(4)),
+            qualifiedSecondsPerToken: typeof tokenData.qualifiedSecondsPerToken === 'number'
+              ? tokenData.qualifiedSecondsPerToken
+              : prev.qualifiedSecondsPerToken,
+            remainingSecondsToNextToken: typeof tokenData.remainingSecondsToNextToken === 'number'
+              ? tokenData.remainingSecondsToNextToken
+              : Math.max(0, (prev.qualifiedSecondsPerToken || 180) - (typeof tokenData.pendingQualifiedSeconds === 'number' ? tokenData.pendingQualifiedSeconds : prev.pendingQualifiedSeconds)),
+            remainingMinutesToNextToken: typeof tokenData.remainingMinutesToNextToken === 'number'
+              ? tokenData.remainingMinutesToNextToken
+              : Number((Math.max(0, (prev.qualifiedSecondsPerToken || 180) - (typeof tokenData.pendingQualifiedSeconds === 'number' ? tokenData.pendingQualifiedSeconds : prev.pendingQualifiedSeconds)) / 60).toFixed(1)),
+            estimatedPendingTokens: typeof tokenData.pendingQualifiedSeconds === 'number'
+              ? Number((tokenData.pendingQualifiedSeconds / (prev.qualifiedSecondsPerToken || 180)).toFixed(4))
+              : prev.estimatedPendingTokens,
             rewardedSecondsToday: typeof tokenData.rewardedSecondsToday === 'number' ? tokenData.rewardedSecondsToday : prev.rewardedSecondsToday,
             dailyRemainingSeconds: typeof tokenData.dailyRemainingSeconds === 'number' ? tokenData.dailyRemainingSeconds : prev.dailyRemainingSeconds,
+            streakDays: typeof tokenData.streakDays === 'number' ? tokenData.streakDays : prev.streakDays,
+            suspiciousScore: typeof tokenData.suspiciousScore === 'number' ? tokenData.suspiciousScore : prev.suspiciousScore,
+            quests: Array.isArray(tokenData.quests) ? tokenData.quests : prev.quests,
             recentClaims: Array.isArray(tokenData.recentClaims) ? tokenData.recentClaims : prev.recentClaims
           }));
         }
@@ -205,13 +227,26 @@ function App() {
       if (!res.ok) return;
       const data = await res.json();
       setTokenWallet({
+        ...DEFAULT_TOKEN_WALLET,
         symbol: data.symbol || 'MUZR',
         balance: data.balance || 0,
         totalEarned: data.totalEarned || 0,
         pendingQualifiedSeconds: data.pendingQualifiedSeconds || 0,
+        qualifiedSecondsPerToken: data.qualifiedSecondsPerToken || 180,
+        remainingSecondsToNextToken: data.remainingSecondsToNextToken ?? 180,
+        remainingMinutesToNextToken: data.remainingMinutesToNextToken ?? 3,
         estimatedPendingTokens: data.estimatedPendingTokens || 0,
         rewardedSecondsToday: data.rewardedSecondsToday || 0,
         dailyRemainingSeconds: data.dailyRemainingSeconds || 0,
+        dailyListenSecondsToday: data.dailyListenSecondsToday || 0,
+        dailyCapSeconds: data.dailyCapSeconds || 7200,
+        capProgressPercent: data.capProgressPercent || 0,
+        streakDays: data.streakDays || 0,
+        suspiciousScore: data.suspiciousScore || 0,
+        progressToNextToken: data.progressToNextToken || 0,
+        tier: data.tier || DEFAULT_TOKEN_WALLET.tier,
+        quests: Array.isArray(data.quests) ? data.quests : [],
+        spendCatalog: Array.isArray(data.spendCatalog) ? data.spendCatalog : [],
         recentClaims: Array.isArray(data.recentClaims) ? data.recentClaims : []
       });
     } catch (err) {
@@ -221,20 +256,77 @@ function App() {
     }
   };
 
+  const loadTokenLeaderboard = async () => {
+    if (!user) return;
+
+    try {
+      const res = await fetch('http://localhost:3000/api/token/leaderboard', {
+        method: 'GET',
+        credentials: 'include'
+      });
+
+      if (!res.ok) return;
+      const data = await res.json();
+      setTokenLeaderboard(Array.isArray(data.leaderboard) ? data.leaderboard.slice(0, 5) : []);
+    } catch (err) {
+      console.error('Failed to load token leaderboard', err);
+    }
+  };
+
+  const handleClaimQuest = async (questKey) => {
+    if (!questKey) return;
+
+    try {
+      const res = await fetch('http://localhost:3000/api/token/claim-quest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ questKey })
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data?.message || 'Quest claim failed');
+        return;
+      }
+
+      await loadTokenWallet();
+      await loadTokenLeaderboard();
+    } catch (err) {
+      console.error('Failed to claim quest', err);
+    }
+  };
+
+  const handleSpendTokens = async (actionKey) => {
+    if (!actionKey) return;
+
+    try {
+      const res = await fetch('http://localhost:3000/api/token/spend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ actionKey })
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data?.message || 'Spend failed');
+        return;
+      }
+
+      await loadTokenWallet();
+    } catch (err) {
+      console.error('Failed to spend tokens', err);
+    }
+  };
+
   useEffect(() => {
     if (user) {
       loadTokenWallet();
+      loadTokenLeaderboard();
     } else {
-      setTokenWallet({
-        symbol: 'MUZR',
-        balance: 0,
-        totalEarned: 0,
-        pendingQualifiedSeconds: 0,
-        estimatedPendingTokens: 0,
-        rewardedSecondsToday: 0,
-        dailyRemainingSeconds: 0,
-        recentClaims: []
-      });
+      setTokenWallet(DEFAULT_TOKEN_WALLET);
+      setTokenLeaderboard([]);
     }
   }, [user]);
 
@@ -959,8 +1051,8 @@ function App() {
         <div className="mx-auto grid w-full max-w-[1600px] grid-cols-1 gap-6 px-4 pt-6 sm:px-5 lg:grid-cols-[260px_1fr_340px] lg:pt-8">
 
           {/* --- LEFT SIDEBAR --- */}
-          <aside className="hidden flex-col gap-6 lg:flex max-h-[calc(100vh-220px)]">
-            <div className="rounded-3xl border border-white/10 bg-[color:var(--panel)]/80 p-5 backdrop-blur h-full flex flex-col">
+          <aside className="hidden flex-col gap-6 lg:flex max-h-[calc(100vh-220px)] min-h-0">
+            <div className="rounded-3xl border border-white/10 bg-[color:var(--panel)]/80 p-5 backdrop-blur h-full min-h-0 flex flex-col overflow-hidden">
               <div className="flex flex-col items-center gap-3 mb-6">
                 <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-pink-500/80 to-rose-500/80 shadow-[0_0_20px_rgba(236,72,153,0.4)] flex items-center justify-center">
                   <img src="/logo.png" alt="M" className="h-12 w-12 object-contain" onError={(e) => e.target.style.display = 'none'} />
@@ -1035,14 +1127,14 @@ function App() {
                 ))}
               </nav>
 
-              <div className="mt-8 flex-1">
+              <div className="mt-8 flex-1 min-h-0 flex flex-col">
                 <div className="flex items-center justify-between">
                   <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">Playlists</p>
                   <button onClick={createPlaylist}><FaPlus className="text-[12px] text-white/40 cursor-pointer hover:text-white" /></button>
                 </div>
-                <div className="mt-3 space-y-1 text-sm text-[color:var(--muted)]">
+                <div className="mt-3 flex-1 min-h-0 overflow-y-auto pr-1 custom-scrollbar space-y-1 text-sm text-[color:var(--muted)]">
                   {playlists.map((list) => (
-                    <div key={list} className="rounded-lg px-2 py-1.5 transition hover:bg-white/5 hover:text-white cursor-pointer truncate">
+                    <div key={list} className="w-full min-w-0 rounded-lg px-2 py-1.5 transition hover:bg-white/5 hover:text-white cursor-pointer truncate">
                       {list}
                     </div>
                   ))}
@@ -1238,29 +1330,12 @@ function App() {
             <TokenCompartment
               tokenWallet={tokenWallet}
               onRefresh={loadTokenWallet}
+              onClaimQuest={handleClaimQuest}
+              onSpendTokens={handleSpendTokens}
+              leaderboard={tokenLeaderboard}
               loading={tokenLoading}
               isLoggedIn={Boolean(user)}
             />
-
-            <div className="rounded-3xl border border-white/10 bg-[color:var(--panel)]/80 p-5 shrink-0">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Friend activity</h3>
-                <button className="text-xs text-[color:var(--muted)]">Settings</button>
-              </div>
-              <div className="mt-4 space-y-4">
-                {friends.map((friend) => (
-                  <div key={friend.name} className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full bg-gradient-to-br from-pink-500 to-rose-500" />
-                    <div className="overflow-hidden">
-                      <p className="text-sm font-semibold">{friend.name}</p>
-                      <p className="text-xs text-[color:var(--muted)] truncate">
-                        {friend.track} • {friend.artist}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
 
             <div className="rounded-3xl border border-white/10 bg-[color:var(--panel)]/80 p-5 flex-1 flex flex-col overflow-hidden">
               <div className="flex items-center justify-between mb-2">

@@ -5,6 +5,7 @@ const admin = require('../middleware/admin');
 const Login = require('../models/login');     
 const TokenAdminAction = require('../models/tokenAdminAction');
 const TokenControl = require('../models/tokenControl');
+const TokenLedger = require('../models/tokenLedger');
 
 const DEFAULT_TOKEN_CONTROL = {
   symbol: 'MUZR',
@@ -12,6 +13,15 @@ const DEFAULT_TOKEN_CONTROL = {
   maxSecondsPerEvent: 60,
   maxDailyQualifiedSeconds: 7200,
   minTrackEventIntervalSeconds: 8,
+  maxRepeatTrackEventsPerDay: 12,
+  diversityPenaltyPercent: 30,
+  suspiciousEventPenaltyThreshold: 25,
+  suspiciousEventHardLimit: 50,
+  streakMaxDays: 7,
+  streakBonusPerDayPercent: 5,
+  questDailyListenSecondsTarget: 2700,
+  questDailyUniqueArtistsTarget: 3,
+  questDailyTokenReward: 5,
   rewardsPaused: false,
   allowAdminMintBurn: true
 };
@@ -137,6 +147,18 @@ router.patch('/users/:id/token', [auth, admin], async (req, res) => {
       symbol: userToUpdate.tokenWallet.symbol || 'MUZR'
     });
 
+    await TokenLedger.create({
+      userId: userToUpdate._id,
+      symbol: userToUpdate.tokenWallet.symbol || 'MUZR',
+      type: delta >= 0 ? 'admin' : 'burn',
+      delta,
+      reason: 'admin-adjustment',
+      metadata: {
+        adminId: req.user.id,
+        targetUserName: userToUpdate.userName
+      }
+    });
+
     res.json({
       message: 'Token wallet updated',
       user: {
@@ -188,6 +210,20 @@ router.put('/users/:id/token', [auth, admin], async (req, res) => {
       symbol: userToUpdate.tokenWallet.symbol || 'MUZR'
     });
 
+    await TokenLedger.create({
+      userId: userToUpdate._id,
+      symbol: userToUpdate.tokenWallet.symbol || 'MUZR',
+      type: delta >= 0 ? 'admin' : 'burn',
+      delta,
+      reason: 'admin-set-balance',
+      metadata: {
+        adminId: req.user.id,
+        targetUserName: userToUpdate.userName,
+        previousBalance: prevBalance,
+        nextBalance
+      }
+    });
+
     res.json({
       message: 'User token balance set',
       user: {
@@ -237,6 +273,15 @@ router.patch('/token-control', [auth, admin], async (req, res) => {
       'maxSecondsPerEvent',
       'maxDailyQualifiedSeconds',
       'minTrackEventIntervalSeconds',
+      'maxRepeatTrackEventsPerDay',
+      'diversityPenaltyPercent',
+      'suspiciousEventPenaltyThreshold',
+      'suspiciousEventHardLimit',
+      'streakMaxDays',
+      'streakBonusPerDayPercent',
+      'questDailyListenSecondsTarget',
+      'questDailyUniqueArtistsTarget',
+      'questDailyTokenReward',
       'rewardsPaused',
       'allowAdminMintBurn'
     ];
@@ -253,7 +298,16 @@ router.patch('/token-control', [auth, admin], async (req, res) => {
       'qualifiedSecondsPerToken',
       'maxSecondsPerEvent',
       'maxDailyQualifiedSeconds',
-      'minTrackEventIntervalSeconds'
+      'minTrackEventIntervalSeconds',
+      'maxRepeatTrackEventsPerDay',
+      'diversityPenaltyPercent',
+      'suspiciousEventPenaltyThreshold',
+      'suspiciousEventHardLimit',
+      'streakMaxDays',
+      'streakBonusPerDayPercent',
+      'questDailyListenSecondsTarget',
+      'questDailyUniqueArtistsTarget',
+      'questDailyTokenReward'
     ];
 
     for (const field of numericFields) {

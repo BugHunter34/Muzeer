@@ -68,7 +68,21 @@ const loginSchema = new mongoose.Schema({
     lastRewardAt: { type: Date },
     lastListenEventAt: { type: Date },
     rewardDayKey: { type: String, default: "" },
-    rewardedSecondsToday: { type: Number, default: 0 }
+    rewardedSecondsToday: { type: Number, default: 0 },
+    dailyListenSecondsToday: { type: Number, default: 0 },
+    dailyUniqueArtists: [{ type: String }],
+    trackEventCountsToday: { type: mongoose.Schema.Types.Mixed, default: {} },
+    artistEventCountsToday: { type: mongoose.Schema.Types.Mixed, default: {} },
+    dailyQuestClaimedDayKey: { type: String, default: "" },
+    dailyQuestClaimedKeys: [{ type: String }],
+    streakDays: { type: Number, default: 0 },
+    lastActiveDayKey: { type: String, default: "" },
+    suspiciousScore: { type: Number, default: 0 },
+    recentSpends: [{
+      actionKey: { type: String },
+      cost: { type: Number },
+      createdAt: { type: Date, default: Date.now }
+    }]
   },
 
   // --- Profile avatar ---
