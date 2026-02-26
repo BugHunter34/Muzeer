@@ -11,16 +11,16 @@ export default defineConfig({
     
     // In Vite 7, if 'all' isn't working, we must be explicit
     allowedHosts: [
-      'evocative-fransisca-bootlessly.ngrok-free.dev',
-      '.ngrok-free.dev', // This allows any subdomain of ngrok-free.dev
+      //'evocative-fransisca-bootlessly.ngrok-free.dev',
+      //'.ngrok-free.dev', // This allows any subdomain of ngrok-free.dev
       'localhost'
     ],
     
-    
+    /** 
     hmr: {
       host: 'evocative-fransisca-bootlessly.ngrok-free.dev',
       protocol: 'wss',
       clientPort: 443 // Important: ngrok's external port is 443 (HTTPS)
-    },
+    },*/
   },
 })
