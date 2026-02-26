@@ -76,17 +76,25 @@ router.patch('/users/:id/role', [auth, admin], async (req, res) => {
   try {
     const userToUpdate = await Login.findById(req.params.id);
     if (!userToUpdate) return res.status(404).json({ message: "User not found" });
+
+    // 1. Protection: If the target is an owner, don't let anyone touch them
+    if (userToUpdate.role === 'owner') {
+      return res.status(403).json({ message: "Owner roles cannot be modified." });
+    }
     
-    // Prevent the admin from demoting themselves!
+    // 2. Protection: Prevent the admin from demoting themselves!
     if (userToUpdate._id.toString() === req.user.id) {
       return res.status(400).json({ message: "You cannot demote yourself!" });
     }
 
-    userToUpdate.role = userToUpdate.role === 'admin' || 'owner' ? 'user' : 'admin';
+    // 3. Correct Logic: If they are admin, make them user. Otherwise, make them admin.
+    userToUpdate.role = (userToUpdate.role === 'admin') ? 'user' : 'admin';
+    
     await userToUpdate.save();
     
-    res.json({ message: "Role updated", user: userToUpdate });
+    res.json({ message: "Role updated successfully", user: userToUpdate });
   } catch (err) {
+    console.error("Role Update Error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });

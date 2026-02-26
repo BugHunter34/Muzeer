@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { FaSearch, FaShieldAlt, FaTrash, FaUserShield, FaBan } from 'react-icons/fa';
+import { FaSearch, FaShieldAlt, FaTrash, FaUserShield, FaBan, FaCrown } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
 
 export default function AdminAbuse() {
@@ -129,18 +129,32 @@ export default function AdminAbuse() {
   };
 
   // 2. Handle Promote/Demote
-  const toggleRole = async (userId) => {
+  const toggleRole = async (userId, currentRole) => {
+    if (currentRole === 'owner') return; // Extra safety: prevent touching owners
+
+    const newRole = currentRole === 'admin' ? 'user' : 'admin';
+
     try {
       const res = await fetch(`http://localhost:3000/api/admin/users/${userId}/role`, {
         method: 'PATCH',
-        credentials: 'include'
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: newRole }) // Tell the backend exactly what we want
       });
+      
       if (!res.ok) {
         const data = await res.json();
         alert(data.message || "Failed to update role");
         return;
       }
-      fetchUsers(); // Refresh the list to show new role
+
+      // Optimistic UI update so it feels instant
+      setUsers((prevUsers) => 
+        prevUsers.map((u) => 
+          u._id === userId ? { ...u, role: newRole } : u
+        )
+      );
+      
     } catch (err) {
       alert("Server error while updating role");
     }
@@ -402,11 +416,15 @@ export default function AdminAbuse() {
                       <div>
                         <div className="flex items-center gap-2">
                           <h2 className={`text-xl font-bold ${u.isBanned ? 'line-through text-white/60' : ''}`}>{u.userName}</h2>
+                          
+                          {/* Role Badges */}
+                          {u.role === 'owner' && <FaCrown className="text-purple-400" title="Server Owner" />}
                           {u.role === 'admin' && <FaUserShield className="text-yellow-400" title="Admin" />}
+                          
                           {u.isBanned && <span className="text-[10px] uppercase font-bold tracking-wider text-orange-400 bg-orange-400/10 px-2 py-0.5 rounded">Banned</span>}
                         </div>
                         <p className="text-sm text-white/60">{u.email}</p>
-                        <p className="text-xs text-emerald-300/80 mt-1">
+                        <p className="mt-1 text-xs text-emerald-300/80">
                           Token balance: {u.tokenWallet?.balance || 0} {u.tokenWallet?.symbol || 'MUZR'}
                         </p>
                       </div>
@@ -414,36 +432,48 @@ export default function AdminAbuse() {
 
                     {/* Admin Action Buttons */}
                     <div className="flex flex-wrap items-center gap-3">
-                      <button
-                        onClick={() => toggleRole(u._id)}
-                        className={`inline-flex items-center gap-2 rounded-full border px-5 py-2 text-sm font-medium transition ${
-                          u.role === 'admin' 
-                            ? 'border-yellow-400/50 bg-yellow-400/10 text-yellow-400 hover:bg-yellow-400/20' 
-                            : 'border-white/10 bg-white/5 text-white hover:bg-white/10'
-                        }`}
-                      >
-                        <FaShieldAlt /> {u.role === 'admin' ? 'Revoke Admin' : 'Grant Admin'}
-                      </button>
-
-                      {/* NEW: Ban Toggle Button */}
-                      <button
-                        onClick={() => toggleBan(u._id, u.userName, u.isBanned)}
-                        className={`inline-flex items-center gap-2 rounded-full border px-5 py-2 text-sm font-medium transition ${
-                          u.isBanned
-                            ? 'border-orange-500/50 bg-orange-500/10 text-orange-400 hover:bg-orange-500/20'
-                            : 'border-white/10 bg-white/5 text-white hover:bg-white/10'
-                        }`}
-                      >
-                        <FaBan /> {u.isBanned ? 'Unban User' : 'Ban User'}
-                      </button>
                       
-                      {/* Existing Nuke Button */}
-                      <button
-                        onClick={() => nukeUser(u._id, u.userName)}
-                        className="inline-flex items-center gap-2 rounded-full border border-red-500/20 bg-red-500/10 px-5 py-2 text-sm font-medium text-red-400 transition hover:bg-red-500 hover:text-white"
-                      >
-                        <FaTrash /> Nuke User
-                      </button>
+                      {/* Only show Grant/Revoke if the user is NOT an owner */}
+                      {u.role !== 'owner' ? (
+                        <button
+                          onClick={() => toggleRole(u._id, u.role)}
+                          className={`inline-flex items-center gap-2 rounded-full border px-5 py-2 text-sm font-medium transition ${
+                            u.role === 'admin' 
+                              ? 'border-yellow-400/50 bg-yellow-400/10 text-yellow-400 hover:bg-yellow-400/20' 
+                              : 'border-white/10 bg-white/5 text-white hover:bg-white/10'
+                          }`}
+                        >
+                          <FaShieldAlt /> {u.role === 'admin' ? 'Revoke Admin' : 'Grant Admin'}
+                        </button>
+                      ) : (
+                        <span className="inline-flex items-center gap-2 rounded-full border border-purple-500/30 bg-purple-500/10 px-5 py-2 text-sm font-medium text-purple-300 cursor-not-allowed">
+                          <FaCrown /> System Owner
+                        </span>
+                      )}
+
+                      {/* Ban Toggle Button (Also hidden for owners, you can't ban the boss) */}
+                      {u.role !== 'owner' && (
+                        <button
+                          onClick={() => toggleBan(u._id, u.userName, u.isBanned)}
+                          className={`inline-flex items-center gap-2 rounded-full border px-5 py-2 text-sm font-medium transition ${
+                            u.isBanned
+                              ? 'border-orange-500/50 bg-orange-500/10 text-orange-400 hover:bg-orange-500/20'
+                              : 'border-white/10 bg-white/5 text-white hover:bg-white/10'
+                          }`}
+                        >
+                          <FaBan /> {u.isBanned ? 'Unban User' : 'Ban User'}
+                        </button>
+                      )}
+                      
+                      {/* Existing Nuke Button (Hidden for owners) */}
+                      {u.role !== 'owner' && (
+                        <button
+                          onClick={() => nukeUser(u._id, u.userName)}
+                          className="inline-flex items-center gap-2 rounded-full border border-red-500/20 bg-red-500/10 px-5 py-2 text-sm font-medium text-red-400 transition hover:bg-red-500 hover:text-white"
+                        >
+                          <FaTrash /> Nuke User
+                        </button>
+                      )}
                     </div>
 
                   </div>
