@@ -4,8 +4,18 @@ import { useNavigate } from 'react-router-dom';
 
 export default function AdminAbuse() {
   const navigate = useNavigate();
+  const currentUser = (() => {
+    try {
+      const raw = localStorage.getItem('user');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  })();
+  const isSystemOwner = currentUser?.role === 'owner';
   const [users, setUsers] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [logsSearchQuery, setLogsSearchQuery] = useState('');
   const [tokenAmountByUser, setTokenAmountByUser] = useState({});
   const [tokenUpdatingUserId, setTokenUpdatingUserId] = useState('');
   const [tokenActions, setTokenActions] = useState([]);
@@ -88,6 +98,11 @@ export default function AdminAbuse() {
   };
 
   const saveTokenControl = async () => {
+    if (!isSystemOwner) {
+      alert('Only system owners can update Muzeercoin control settings.');
+      return;
+    }
+
     try {
       setSavingTokenControl(true);
       const payload = {
@@ -154,6 +169,7 @@ export default function AdminAbuse() {
           u._id === userId ? { ...u, role: newRole } : u
         )
       );
+      fetchTokenActions();
       
     } catch (err) {
       alert("Server error while updating role");
@@ -179,6 +195,7 @@ export default function AdminAbuse() {
         return;
       }
       fetchUsers(); // Refresh the list
+      fetchTokenActions();
     } catch (err) {
       alert(`Server error while trying to ${action} user`);
     }
@@ -199,6 +216,7 @@ export default function AdminAbuse() {
         return;
       }
       fetchUsers(); // Refresh the list
+      fetchTokenActions();
     } catch (err) {
       alert("Server error while nuking user");
     }
@@ -212,6 +230,11 @@ export default function AdminAbuse() {
   };
 
   const adjustUserTokens = async (userId, direction) => {
+    if (!isSystemOwner) {
+      alert('Only system owners can mint or burn Muzeercoin.');
+      return;
+    }
+
     const rawValue = tokenAmountByUser[userId] ?? '1';
     const parsedAmount = Number(rawValue);
 
@@ -248,6 +271,11 @@ export default function AdminAbuse() {
   };
 
   const setUserTokenBalance = async (userId) => {
+    if (!isSystemOwner) {
+      alert('Only system owners can set Muzeercoin balances.');
+      return;
+    }
+
     const rawValue = tokenAmountByUser[userId] ?? '0';
     const parsed = Number(rawValue);
     if (!Number.isFinite(parsed) || parsed < 0) {
@@ -287,9 +315,120 @@ export default function AdminAbuse() {
     u.email?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const getLogTone = (actionType) => {
+    switch (actionType) {
+      case 'ban_user':
+        return 'border-orange-400/30 bg-orange-500/10 text-orange-100';
+      case 'unban_user':
+        return 'border-emerald-400/30 bg-emerald-500/10 text-emerald-100';
+      case 'grant_admin':
+        return 'border-amber-400/30 bg-amber-500/10 text-amber-100';
+      case 'revoke_admin':
+        return 'border-yellow-300/30 bg-yellow-500/10 text-yellow-100';
+      case 'delete_user':
+        return 'border-rose-400/30 bg-rose-500/10 text-rose-100';
+      case 'token_adjust':
+      case 'token_set_balance':
+        return 'border-cyan-400/30 bg-cyan-500/10 text-cyan-100';
+      case 'token_control_update':
+        return 'border-violet-400/30 bg-violet-500/10 text-violet-100';
+      default:
+        return 'border-white/15 bg-white/5 text-white/90';
+    }
+  };
+
+  const getTokenLogText = (action) => {
+    const adminName = action.adminUserName || 'unknown';
+
+    if (action.actionType === 'token_adjust') {
+      const delta = Number(action.delta || 0);
+      const actionName = delta >= 0 ? 'mint' : 'burn';
+      return `${adminName}: ${actionName} ${Math.abs(delta)} ${action.symbol || 'MUZR'} ${delta >= 0 ? 'to' : 'from'} ${action.targetUserName || 'user'}`;
+    }
+
+    if (action.actionType === 'token_set_balance') {
+      return `${adminName}: set ${action.resultingBalance ?? 0} ${action.symbol || 'MUZR'} for ${action.targetUserName || 'user'}`;
+    }
+
+    if (action.actionType === 'token_control_update') {
+      const changes = [];
+      if (action.metadata && typeof action.metadata === 'object') {
+        if (Object.prototype.hasOwnProperty.call(action.metadata, 'symbol')) {
+          changes.push(`symbol=${action.metadata.symbol}`);
+        }
+        if (Object.prototype.hasOwnProperty.call(action.metadata, 'rewardsPaused')) {
+          changes.push(`rewardsPaused=${action.metadata.rewardsPaused}`);
+        }
+        if (Object.prototype.hasOwnProperty.call(action.metadata, 'allowAdminMintBurn')) {
+          changes.push(`allowAdminMintBurn=${action.metadata.allowAdminMintBurn}`);
+        }
+      }
+      return `${adminName}: edited ${changes.join(', ') || 'token settings'}`;
+    }
+
+    return null;
+  };
+
+  const getReadableLogText = (action) => {
+    const tokenText = getTokenLogText(action);
+    if (tokenText) return tokenText;
+
+    const adminName = action.adminUserName || 'unknown';
+
+    if (action.summary) {
+      return `${adminName}: ${action.summary}`;
+    }
+
+    if (action.actionType) {
+      return `${adminName}: ${action.actionType.replace(/_/g, ' ')}`;
+    }
+
+    if (action.metadata && typeof action.metadata === 'object') {
+      if (Object.prototype.hasOwnProperty.call(action.metadata, 'isBanned')) {
+        return `${adminName}: ${action.metadata.isBanned ? 'Banned' : 'Unbanned'} ${action.targetUserName || 'user'}`;
+      }
+      if (Object.prototype.hasOwnProperty.call(action.metadata, 'role') && action.targetUserName) {
+        return `${adminName}: ${action.metadata.role === 'admin' ? 'Granted admin to' : 'Revoked admin from'} ${action.targetUserName}`;
+      }
+    }
+
+    if (typeof action.delta === 'number') {
+      const delta = Number(action.delta || 0);
+      const actionName = delta > 0 ? 'mint' : delta < 0 ? 'burn' : 'set';
+      const details = delta === 0
+        ? `${action.resultingBalance ?? 0} ${action.symbol || 'MUZR'} for ${action.targetUserName || 'user'}`
+        : `${Math.abs(delta)} ${action.symbol || 'MUZR'} ${delta > 0 ? 'to' : 'from'} ${action.targetUserName || 'user'}`;
+      return `${adminName}: ${actionName} ${details}`;
+    }
+
+    if (action.targetUserName) {
+      return `${adminName}: Updated ${action.targetUserName}`;
+    }
+
+    return `${adminName}: Logged event`;
+  };
+
+  const filteredTokenActions = tokenActions.filter((action) => {
+    const query = logsSearchQuery.trim().toLowerCase();
+    if (!query) return true;
+
+    const searchable = [
+      getReadableLogText(action),
+      action.adminUserName,
+      action.targetUserName,
+      action.summary,
+      action.actionType
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+    return searchable.includes(query);
+  });
+
   return (
-    <div className="h-screen w-full overflow-y-auto bg-[radial-gradient(circle_at_8%_18%,rgba(48,214,197,0.18),transparent_42%),radial-gradient(circle_at_78%_15%,rgba(255,180,84,0.16),transparent_46%),radial-gradient(circle_at_55%_85%,rgba(22,67,87,0.35),transparent_55%),#06080c] text-white">
-      <div className="mx-auto w-full max-w-[1200px] px-4 py-8 sm:px-6">
+    <div className="admin-scrollbar h-screen w-full overflow-y-auto bg-[radial-gradient(circle_at_8%_18%,rgba(48,214,197,0.18),transparent_42%),radial-gradient(circle_at_78%_15%,rgba(255,180,84,0.16),transparent_46%),radial-gradient(circle_at_55%_85%,rgba(22,67,87,0.35),transparent_55%),#06080c] text-white">
+      <div className="mx-auto w-full max-w-[1700px] px-4 py-8 sm:px-6">
         
         {/* HEADER */}
         <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -305,107 +444,81 @@ export default function AdminAbuse() {
           </button>
         </header>
 
-        {/* SEARCH BAR */}
-        <div className="relative mb-7 flex w-full items-center gap-3 group">
-          <FaSearch className="absolute right-4 text-white/30 group-focus-within:text-yellow-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full rounded-full border border-white/10 bg-white/5 pl-10 pr-4 py-3 text-sm text-white placeholder:text-white/40 focus:border-yellow-400/50 focus:outline-none transition-all"
-            placeholder="Search users by name or email..."
-          />
-        </div>
-
         {/* ERROR / LOADING STATES */}
         {loading && <div className="rounded-3xl border border-white/10 bg-white/5 p-10 text-center text-white/45">Fetching database...</div>}
         {error && <div className="rounded-3xl border border-rose-400/20 bg-rose-500/10 p-5 text-rose-300">{error}</div>}
 
         {!loading && !error && (
-          <section className="mb-6 rounded-2xl border border-cyan-400/20 bg-cyan-500/5 p-4">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-cyan-200">Global Token Control</h2>
-              <button
-                onClick={saveTokenControl}
-                disabled={savingTokenControl}
-                className="rounded-lg border border-cyan-300/30 bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-100 transition hover:bg-cyan-500/20 disabled:opacity-60"
-              >
-                {savingTokenControl ? 'Saving...' : 'Save Control'}
-              </button>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <label className="text-xs text-white/75">
-                Symbol
-                <input value={tokenControl.symbol || ''} onChange={(e) => updateTokenControlField('symbol', e.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-sm text-white focus:border-cyan-400/50 focus:outline-none" />
-              </label>
-              <label className="text-xs text-white/75">
-                Sec / Token
-                <input type="number" min="1" value={tokenControl.qualifiedSecondsPerToken ?? 180} onChange={(e) => updateTokenControlField('qualifiedSecondsPerToken', e.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-sm text-white focus:border-cyan-400/50 focus:outline-none" />
-              </label>
-              <label className="text-xs text-white/75">
-                Max Sec / Event
-                <input type="number" min="1" value={tokenControl.maxSecondsPerEvent ?? 60} onChange={(e) => updateTokenControlField('maxSecondsPerEvent', e.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-sm text-white focus:border-cyan-400/50 focus:outline-none" />
-              </label>
-              <label className="text-xs text-white/75">
-                Daily Sec Cap
-                <input type="number" min="1" value={tokenControl.maxDailyQualifiedSeconds ?? 7200} onChange={(e) => updateTokenControlField('maxDailyQualifiedSeconds', e.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-sm text-white focus:border-cyan-400/50 focus:outline-none" />
-              </label>
-              <label className="text-xs text-white/75 sm:col-span-2 lg:col-span-1">
-                Min Track Cooldown (sec)
-                <input type="number" min="0" value={tokenControl.minTrackEventIntervalSeconds ?? 8} onChange={(e) => updateTokenControlField('minTrackEventIntervalSeconds', e.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-sm text-white focus:border-cyan-400/50 focus:outline-none" />
-              </label>
-              <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/85">
-                <input type="checkbox" checked={Boolean(tokenControl.rewardsPaused)} onChange={(e) => updateTokenControlField('rewardsPaused', e.target.checked)} />
-                Rewards Paused
-              </label>
-              <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/85">
-                <input type="checkbox" checked={Boolean(tokenControl.allowAdminMintBurn)} onChange={(e) => updateTokenControlField('allowAdminMintBurn', e.target.checked)} />
-                Allow Admin Mint/Burn
-              </label>
-            </div>
-          </section>
-        )}
+          <div className="grid items-start gap-6 xl:grid-cols-[440px_1fr_440px]">
+            <aside className="space-y-6 xl:sticky xl:top-6">
+              <section className="rounded-2xl border border-cyan-400/20 bg-cyan-500/5 p-4">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h2 className="text-lg font-semibold text-cyan-200">Global Token Control</h2>
+                  <button
+                    onClick={saveTokenControl}
+                    disabled={savingTokenControl || !isSystemOwner}
+                    className="rounded-lg border border-cyan-300/30 bg-cyan-500/10 px-3 py-1.5 text-sm text-cyan-100 transition hover:bg-cyan-500/20 disabled:opacity-60"
+                  >
+                    {savingTokenControl ? 'Saving...' : 'Save Control'}
+                  </button>
+                </div>
+                {!isSystemOwner && (
+                  <p className="mb-3 text-sm text-cyan-100/70">Only system owner can edit Muzeercoin settings.</p>
+                )}
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                  <label className="text-sm text-white/75">
+                    Symbol
+                    <input disabled={!isSystemOwner} value={tokenControl.symbol || ''} onChange={(e) => updateTokenControlField('symbol', e.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-base text-white focus:border-cyan-400/50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60" />
+                  </label>
+                  <label className="text-sm text-white/75">
+                    Sec / Token
+                    <input disabled={!isSystemOwner} type="number" min="1" value={tokenControl.qualifiedSecondsPerToken ?? 180} onChange={(e) => updateTokenControlField('qualifiedSecondsPerToken', e.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-base text-white focus:border-cyan-400/50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60" />
+                  </label>
+                  <label className="text-sm text-white/75">
+                    Max Sec / Event
+                    <input disabled={!isSystemOwner} type="number" min="1" value={tokenControl.maxSecondsPerEvent ?? 60} onChange={(e) => updateTokenControlField('maxSecondsPerEvent', e.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-base text-white focus:border-cyan-400/50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60" />
+                  </label>
+                  <label className="text-sm text-white/75">
+                    Daily Sec Cap
+                    <input disabled={!isSystemOwner} type="number" min="1" value={tokenControl.maxDailyQualifiedSeconds ?? 7200} onChange={(e) => updateTokenControlField('maxDailyQualifiedSeconds', e.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-base text-white focus:border-cyan-400/50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60" />
+                  </label>
+                  <label className="text-sm text-white/75">
+                    Min Track Cooldown (sec)
+                    <input disabled={!isSystemOwner} type="number" min="0" value={tokenControl.minTrackEventIntervalSeconds ?? 8} onChange={(e) => updateTokenControlField('minTrackEventIntervalSeconds', e.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-base text-white focus:border-cyan-400/50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60" />
+                  </label>
+                  <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/85">
+                    <input disabled={!isSystemOwner} type="checkbox" checked={Boolean(tokenControl.rewardsPaused)} onChange={(e) => updateTokenControlField('rewardsPaused', e.target.checked)} />
+                    Rewards Paused
+                  </label>
+                  <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/85">
+                    <input disabled={!isSystemOwner} type="checkbox" checked={Boolean(tokenControl.allowAdminMintBurn)} onChange={(e) => updateTokenControlField('allowAdminMintBurn', e.target.checked)} />
+                    Allow Admin Mint/Burn
+                  </label>
+                </div>
+              </section>
+            </aside>
 
-        {!loading && !error && (
-          <section className="mb-6 rounded-2xl border border-emerald-400/20 bg-emerald-500/5 p-4">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-emerald-200">Recent Token Admin Actions</h2>
-              <button
-                onClick={fetchTokenActions}
-                className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/80 transition hover:bg-white/10"
-              >
-                Refresh
-              </button>
-            </div>
-            {tokenActions.length === 0 ? (
-              <p className="mt-3 text-xs text-white/60">No token admin actions yet.</p>
-            ) : (
-              <div className="mt-3 max-h-48 space-y-2 overflow-y-auto pr-1 text-xs text-white/80">
-                {tokenActions.slice(0, 8).map((action) => (
-                  <div key={action._id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
-                    <span className="truncate">
-                      {action.adminUserName} → {action.targetUserName} ({action.delta > 0 ? '+' : ''}{action.delta} {action.symbol || 'MUZR'})
-                    </span>
-                    <span className="text-white/50">
-                      {new Date(action.createdAt).toLocaleString()}
-                    </span>
+            <main>
+              <div className="relative mb-5 flex w-full items-center gap-3 group">
+                <FaSearch className="absolute right-4 text-white/30 group-focus-within:text-yellow-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full rounded-full border border-white/10 bg-white/5 pl-10 pr-4 py-3 text-sm text-white placeholder:text-white/40 focus:border-yellow-400/50 focus:outline-none transition-all"
+                  placeholder="Search users by name or email..."
+                />
+              </div>
+
+              {/* USER LIST RESULTS */}
+              <div className="admin-scrollbar grid max-h-[74vh] gap-4 overflow-y-auto pr-1">
+                {filteredUsers.length === 0 ? (
+                  <div className="rounded-3xl border border-dashed border-white/15 bg-white/5 p-10 text-center text-white/45">
+                    No users match your search.
                   </div>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* USER LIST RESULTS */}
-        {!loading && !error && (
-          <div className="grid max-h-[62vh] gap-4 overflow-y-auto pr-1">
-            {filteredUsers.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-white/15 bg-white/5 p-10 text-center text-white/45">
-                No users match your search.
-              </div>
-            ) : (
-              filteredUsers.map(u => (
-                <section key={u._id} className={`rounded-2xl border transition p-5 ${u.isBanned ? 'border-orange-500/40 bg-orange-500/5' : 'border-white/10 bg-gradient-to-br from-white/5 to-transparent hover:border-yellow-400/30 hover:bg-white/10'}`}>
+                ) : (
+                  filteredUsers.map(u => (
+                    <section key={u._id} className={`rounded-2xl border transition p-5 ${u.isBanned ? 'border-orange-500/40 bg-orange-500/5' : 'border-white/10 bg-gradient-to-br from-white/5 to-transparent hover:border-yellow-400/30 hover:bg-white/10'}`}>
                   <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                     
                     {/* User Info */}
@@ -480,41 +593,91 @@ export default function AdminAbuse() {
 
                   <div className="mt-4 rounded-xl border border-emerald-400/20 bg-emerald-500/5 p-3">
                     <p className="text-xs uppercase tracking-[0.2em] text-emerald-300/80">Token Control</p>
+                    {!isSystemOwner && (
+                      <p className="mt-2 text-xs text-emerald-100/70">Only system owner can edit user Muzeercoin balance.</p>
+                    )}
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <input
                         type="number"
                         min="1"
                         step="1"
+                        disabled={!isSystemOwner}
                         value={tokenAmountByUser[u._id] ?? '1'}
                         onChange={(e) => setTokenAmountForUser(u._id, e.target.value)}
-                        className="w-24 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-sm text-white focus:border-emerald-400/50 focus:outline-none"
+                        className="w-24 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-sm text-white focus:border-emerald-400/50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                       />
                       <button
                         onClick={() => adjustUserTokens(u._id, 'mint')}
-                        disabled={tokenUpdatingUserId === u._id}
+                        disabled={tokenUpdatingUserId === u._id || !isSystemOwner}
                         className="rounded-full border border-emerald-400/40 bg-emerald-500/15 px-4 py-1.5 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/25 disabled:opacity-60"
                       >
                         Mint
                       </button>
                       <button
                         onClick={() => adjustUserTokens(u._id, 'burn')}
-                        disabled={tokenUpdatingUserId === u._id}
+                        disabled={tokenUpdatingUserId === u._id || !isSystemOwner}
                         className="rounded-full border border-red-400/40 bg-red-500/15 px-4 py-1.5 text-xs font-semibold text-red-200 transition hover:bg-red-500/25 disabled:opacity-60"
                       >
                         Burn
                       </button>
                       <button
                         onClick={() => setUserTokenBalance(u._id)}
-                        disabled={tokenUpdatingUserId === u._id}
+                        disabled={tokenUpdatingUserId === u._id || !isSystemOwner}
                         className="rounded-full border border-cyan-300/40 bg-cyan-500/15 px-4 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-500/25 disabled:opacity-60"
                       >
                         Set Exact
                       </button>
                     </div>
                   </div>
-                </section>
-              ))
-            )}
+                    </section>
+                  ))
+                )}
+              </div>
+            </main>
+
+            <aside className="space-y-6 xl:sticky xl:top-6">
+              <section className="rounded-2xl border border-emerald-400/20 bg-emerald-500/5 p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="text-lg font-semibold text-emerald-200">Logs</h2>
+                  <button
+                    onClick={fetchTokenActions}
+                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white/80 transition hover:bg-white/10"
+                  >
+                    Refresh
+                  </button>
+                </div>
+                <div className="relative mt-3 flex w-full items-center gap-2 group">
+                  <FaSearch className="absolute right-4 text-white/30 group-focus-within:text-emerald-300" />
+                  <input
+                    type="text"
+                    value={logsSearchQuery}
+                    onChange={(e) => setLogsSearchQuery(e.target.value)}
+                    className="w-full rounded-full border border-white/10 bg-white/5 py-2.5 pl-4 pr-10 text-sm text-white placeholder:text-white/40 focus:border-emerald-400/50 focus:outline-none transition-all"
+                    placeholder="Search logs..."
+                  />
+                </div>
+                {tokenActions.length === 0 ? (
+                  <p className="mt-3 text-sm text-white/60">No admin logs yet.</p>
+                ) : filteredTokenActions.length === 0 ? (
+                  <p className="mt-3 text-sm text-white/60">No logs match your search.</p>
+                ) : (
+                  <div className="admin-scrollbar mt-3 max-h-[74vh] space-y-2 overflow-y-auto pr-1 text-base text-white/85">
+                    {filteredTokenActions.slice(0, 20).map((action) => (
+                      <div key={action._id} className={`rounded-lg border px-3 py-2 ${getLogTone(action.actionType)}`}>
+                        <p className="text-base font-medium text-white/90">
+                          {getReadableLogText(action)}
+                        </p>
+                        <div className="mt-1 flex flex-wrap items-center justify-end gap-2 text-sm text-white/65">
+                          <span className="text-white/50">
+                            {new Date(action.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </aside>
           </div>
         )}
       </div>

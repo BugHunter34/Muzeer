@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom';
 import './App.css'
 import './index.css'
-import { FaPlay, FaPause, FaStepForward, FaStepBackward, FaVolumeUp, FaPlus, FaHeart, FaSearch, FaSlidersH } from 'react-icons/fa'
+import { FaPlay, FaPause, FaVolumeUp, FaPlus, FaHeart, FaSearch, FaSlidersH, FaTrash } from 'react-icons/fa'
 import { MdQueueMusic } from 'react-icons/md'
 import TokenCompartment from './components/TokenCompartment'
 
@@ -31,6 +31,24 @@ const DEFAULT_TOKEN_WALLET = {
   spendCatalog: [],
   recentClaims: []
 }
+
+const detectLowPowerDevice = () => {
+  if (typeof window === 'undefined') return false
+
+  const nav = window.navigator
+  const connection = nav.connection || nav.mozConnection || nav.webkitConnection
+  const lowCpu = typeof nav.hardwareConcurrency === 'number' && nav.hardwareConcurrency <= 4
+  const lowMemory = typeof nav.deviceMemory === 'number' && nav.deviceMemory <= 4
+  const saveData = Boolean(connection?.saveData)
+  const reducedMotion = Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)
+
+  return lowCpu || lowMemory || saveData || reducedMotion
+}
+
+const DEFAULT_PLAYLISTS = [
+  { id: 'daily-mix-1', name: 'Daily Mix 1', tracks: [] },
+  { id: 'chill-focus', name: 'Chill Focus', tracks: [] }
+]
 
 function App() {
   const [appName] = useState('Muzeer')
@@ -80,13 +98,25 @@ function App() {
 
   // --- Theme State ---
   const [themeOpen, setThemeOpen] = useState(false)
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false)
   const [accentStart, setAccentStart] = useState('#3bf0d1')
   const [accentEnd, setAccentEnd] = useState('#ffb454')
   const [speakerGlow, setSpeakerGlow] = useState('#3bf0d1')
   const [intensity, setIntensity] = useState(1)
+  const [potatoMode, setPotatoMode] = useState(() => {
+    if (typeof window === 'undefined') return false
+    const saved = window.localStorage.getItem('muzeer-potato-mode')
+    if (saved === '1') return true
+    if (saved === '0') return false
+    return detectLowPowerDevice()
+  })
 
   // --- Playlist & Queue State ---
-  const [playlists, setPlaylists] = useState(['Daily Mix 1', 'Chill Focus', 'Pinkwave Essentials'])
+  const [playlists, setPlaylists] = useState(DEFAULT_PLAYLISTS)
+  const [activePlaylistId, setActivePlaylistId] = useState(DEFAULT_PLAYLISTS[0].id)
+  const [newPlaylistName, setNewPlaylistName] = useState('')
+  const [rightPanelMode, setRightPanelMode] = useState('queue')
   const [queue, setQueue] = useState([])
   const [queueIndex, setQueueIndex] = useState(0)
 
@@ -342,12 +372,38 @@ useEffect(() => {
     }
   }, [user]);
 
-  const handleLogOut = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    window.dispatchEvent(new Event("userUpdated"));
-    navigate('/login');
-  };
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem('muzeer-playlists')
+      const parsed = raw ? JSON.parse(raw) : null
+      if (!Array.isArray(parsed) || parsed.length === 0) return
+
+      const sanitized = parsed
+        .filter((playlist) => playlist && typeof playlist.name === 'string')
+        .map((playlist, idx) => ({
+          id: playlist.id || `playlist-${Date.now()}-${idx}`,
+          name: playlist.name.trim() || `Playlist ${idx + 1}`,
+          tracks: Array.isArray(playlist.tracks) ? playlist.tracks : []
+        }))
+
+      if (sanitized.length > 0) {
+        setPlaylists(sanitized)
+        setActivePlaylistId(sanitized[0].id)
+      }
+    } catch {
+      // ignore invalid local cache
+    }
+  }, [])
+
+  useEffect(() => {
+    window.localStorage.setItem('muzeer-playlists', JSON.stringify(playlists))
+  }, [playlists])
+
+  useEffect(() => {
+    if (!playlists.some((playlist) => playlist.id === activePlaylistId)) {
+      setActivePlaylistId(playlists[0]?.id || null)
+    }
+  }, [playlists, activePlaylistId])
 
   // ---------------------------------------------------------
   // 1. INITIAL APP LOAD
@@ -527,6 +583,11 @@ useEffect(() => {
   }
 
   const startVisualizer = async () => {
+    if (potatoMode) {
+      stopVisualizer()
+      return
+    }
+
     try {
       setupAudioGraph()
       if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
@@ -550,6 +611,13 @@ useEffect(() => {
     if (container) container.style.setProperty('--hz-energy', '0')
     if (ambienceRef.current) ambienceRef.current.style.setProperty('--hz-energy', '0')
   }
+
+  useEffect(() => {
+    window.localStorage.setItem('muzeer-potato-mode', potatoMode ? '1' : '0')
+    if (potatoMode) {
+      stopVisualizer()
+    }
+  }, [potatoMode])
 
   const playTrack = async (track, isNewPlay = true) => {
     if (audioRef.current) {
@@ -669,6 +737,10 @@ useEffect(() => {
   }, [searchProgressTarget])
 
   useEffect(() => {
+    setAvatarLoadFailed(false)
+  }, [avatarSrc])
+
+  useEffect(() => {
     const pendingTrackRaw = localStorage.getItem('pendingTrack')
     if (!pendingTrackRaw) return
 
@@ -714,9 +786,54 @@ useEffect(() => {
     else navigate('/login');
   };
 
-  const createPlaylist = () => {
-    alert("Database not operational")
+  const createPlaylist = (incomingName) => {
+    const cleanName = (incomingName ?? newPlaylistName).trim()
+    if (!cleanName) return
+
+    const alreadyExists = playlists.some((playlist) => playlist.name.toLowerCase() === cleanName.toLowerCase())
+    if (alreadyExists) return
+
+    const id = `playlist-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    const next = [...playlists, { id, name: cleanName, tracks: [] }]
+    setPlaylists(next)
+    setActivePlaylistId(id)
+    setRightPanelMode('playlist')
+    setNewPlaylistName('')
   }
+
+  const removePlaylist = (playlistId) => {
+    if (playlists.length <= 1) return
+    setPlaylists((prev) => prev.filter((playlist) => playlist.id !== playlistId))
+  }
+
+  const addTrackToPlaylist = (track, playlistId = activePlaylistId) => {
+    if (!track || !playlistId) return
+
+    setPlaylists((prev) => prev.map((playlist) => {
+      if (playlist.id !== playlistId) return playlist
+
+      const exists = playlist.tracks.some((item) => {
+        const sameUrl = (item.webpage_url || item.audio_url || item.proxy_url) === (track.webpage_url || track.audio_url || track.proxy_url)
+        const sameTitle = (item.title || '').toLowerCase() === (track.title || '').toLowerCase()
+        return sameUrl || sameTitle
+      })
+
+      if (exists) return playlist
+      return { ...playlist, tracks: [...playlist.tracks, track] }
+    }))
+  }
+
+  const removeTrackFromPlaylist = (playlistId, trackIndex) => {
+    setPlaylists((prev) => prev.map((playlist) => {
+      if (playlist.id !== playlistId) return playlist
+      return {
+        ...playlist,
+        tracks: playlist.tracks.filter((_, index) => index !== trackIndex)
+      }
+    }))
+  }
+
+  const activePlaylist = playlists.find((playlist) => playlist.id === activePlaylistId) || null
 
   const handleSearch = async (e) => {
     e.preventDefault()
@@ -956,25 +1073,31 @@ useEffect(() => {
   }
 
   return (
-    <div className="app-shell h-screen overflow-hidden text-[color:var(--ink)]" style={themeVars}>
+    <div className={`app-shell h-screen overflow-hidden text-[color:var(--ink)] ${potatoMode ? 'potato-mode' : ''}`} style={themeVars}>
       {/* Background Ambience (Pinkwave) */}
       <div ref={ambienceRef} className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-        <div className="liquid-flow" aria-hidden="true" />
-        <div className={`edge-glow ${isPlaying ? 'is-playing' : 'is-paused'}`} aria-hidden="true" />
-        <div className="absolute -left-32 top-10 h-72 w-72 rounded-full blur-[120px]" style={{ backgroundColor: accentEnd, opacity: 0.3 }} />
-        <div className="absolute right-0 top-1/3 h-72 w-72 rounded-full blur-[140px]" style={{ backgroundColor: accentStart, opacity: 0.25 }} />
-        <div className="absolute bottom-0 left-1/4 h-80 w-80 rounded-full blur-[160px]" style={{ backgroundColor: speakerGlow, opacity: 0.2 }} />
-        <div ref={wavesRef} className={`hz-waves hz-liquid ${isPlaying ? 'is-playing' : 'is-paused'}`} aria-hidden="true">
-          <div className="hz-spikes" aria-hidden="true" />
-          <div className="speaker" aria-hidden="true">
-            <div className="speaker__rim" />
-            <div className="speaker__cone" />
-            <div className="speaker__cap" />
-            <div className="speaker__ring speaker__ring--outer" />
-            <div className="speaker__ring speaker__ring--mid" />
-            <div className="speaker__ring speaker__ring--inner" />
-          </div>
-        </div>
+        {potatoMode ? (
+          <div className="potato-static-bg" aria-hidden="true" />
+        ) : (
+          <>
+            <div className="liquid-flow" aria-hidden="true" />
+            <div className={`edge-glow ${isPlaying ? 'is-playing' : 'is-paused'}`} aria-hidden="true" />
+            <div className="absolute -left-32 top-10 h-72 w-72 rounded-full blur-[120px]" style={{ backgroundColor: accentEnd, opacity: 0.3 }} />
+            <div className="absolute right-0 top-1/3 h-72 w-72 rounded-full blur-[140px]" style={{ backgroundColor: accentStart, opacity: 0.25 }} />
+            <div className="absolute bottom-0 left-1/4 h-80 w-80 rounded-full blur-[160px]" style={{ backgroundColor: speakerGlow, opacity: 0.2 }} />
+            <div ref={wavesRef} className={`hz-waves hz-liquid ${isPlaying ? 'is-playing' : 'is-paused'}`} aria-hidden="true">
+              <div className="hz-spikes" aria-hidden="true" />
+              <div className="speaker" aria-hidden="true">
+                <div className="speaker__rim" />
+                <div className="speaker__cone" />
+                <div className="speaker__cap" />
+                <div className="speaker__ring speaker__ring--outer" />
+                <div className="speaker__ring speaker__ring--mid" />
+                <div className="speaker__ring speaker__ring--inner" />
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="app-content">
@@ -1005,9 +1128,57 @@ useEffect(() => {
 
             <div className="relative flex items-center gap-3">
               {user ? (
-                <button onClick={handleProfileMock} className="text-xs text-emerald-300 hover:text-emerald-200">
-                  Welcome, {user.userName ? user.userName : 'User'}!
-                </button>
+                <div className="relative">
+                  <button
+                    onClick={() => setProfileMenuOpen((prev) => !prev)}
+                    className="flex items-center gap-2 px-1 py-1 text-white/90 transition hover:text-white"
+                    aria-label="Open profile menu"
+                  >
+                    <span className="h-9 w-9 rounded-full overflow-hidden border border-white/20 bg-white/5 flex items-center justify-center">
+                      {avatarSrc && !avatarLoadFailed ? (
+                        <img
+                          src={avatarSrc}
+                          alt="avatar"
+                          className="h-full w-full object-cover"
+                          onError={(e) => {
+                            e.preventDefault()
+                            setAvatarLoadFailed(true)
+                          }}
+                        />
+                      ) : (
+                        <span className="font-bold text-white uppercase text-sm">
+                          {user?.userName ? user.userName.charAt(0) : 'U'}
+                        </span>
+                      )}
+                    </span>
+                    <span className="max-w-[130px] truncate text-sm font-semibold">
+                      {user.userName ? user.userName : 'User'}
+                    </span>
+                  </button>
+
+                  {profileMenuOpen && (
+                    <div className="absolute right-0 top-full z-20 mt-2 w-44 rounded-xl border border-white/10 bg-[color:var(--panel)]/95 p-1.5 text-left shadow-[0_14px_30px_rgba(0,0,0,0.35)] backdrop-blur">
+                      <button
+                        onClick={() => {
+                          setProfileMenuOpen(false)
+                          navigate('/profile')
+                        }}
+                        className="w-full rounded-lg px-3 py-2 text-xs text-white/80 transition hover:bg-white/10 hover:text-white"
+                      >
+                        Open Profile
+                      </button>
+                      <button
+                        onClick={() => {
+                          setProfileMenuOpen(false)
+                          handleAuthMock()
+                        }}
+                        className="mt-1 w-full rounded-lg px-3 py-2 text-xs text-rose-300 transition hover:bg-rose-500/15 hover:text-rose-200"
+                      >
+                        Log Out
+                      </button>
+                    </div>
+                  )}
+                </div>
               ) : (
                 <button onClick={handleAuthMock} className="text-xs text-white/60 hover:text-white">Login</button>
               )}
@@ -1025,8 +1196,13 @@ useEffect(() => {
                   <p className="text-[10px] uppercase tracking-[0.3em] text-white/40">Theme</p>
                   <div className="mt-3 space-y-3">
                     <label className="flex items-center justify-between gap-3">
-                      <span className="text-white/70">Turn off</span>
-                      <button className="h-7 w-10 cursor-pointer rounded " onClick={stopVisualizer}>Stop</button> 
+                      <span className="text-white/70">Potato mode</span>
+                      <button
+                        onClick={() => setPotatoMode((prev) => !prev)}
+                        className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.2em] transition ${potatoMode ? 'border-emerald-300/60 bg-emerald-300/20 text-emerald-200' : 'border-white/20 bg-white/5 text-white/60'}`}
+                      >
+                        {potatoMode ? 'On' : 'Off'}
+                      </button>
                     </label>
                     <label className="flex items-center justify-between gap-3">
                       <span className="text-white/70">Gradient start</span>
@@ -1060,65 +1236,13 @@ useEffect(() => {
         </nav>
 
         {/* Main Grid Layout */}
-        <div className="mx-auto grid w-full max-w-[1600px] grid-cols-1 gap-6 px-4 pt-6 sm:px-5 lg:grid-cols-[260px_1fr_340px] lg:pt-8">
+        <div className="mx-auto grid w-full max-w-[1600px] grid-cols-1 gap-6 px-4 pt-6 sm:px-5 lg:grid-cols-[320px_1fr_340px] lg:pt-8">
 
           {/* --- LEFT SIDEBAR --- */}
           <aside className="hidden flex-col gap-6 lg:flex max-h-[calc(100vh-220px)] min-h-0">
             <div className="rounded-3xl border border-white/10 bg-[color:var(--panel)]/80 p-5 backdrop-blur h-full min-h-0 flex flex-col overflow-hidden">
-              <div className="flex flex-col items-center gap-3 mb-6">
-                <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-pink-500/80 to-rose-500/80 shadow-[0_0_20px_rgba(236,72,153,0.4)] flex items-center justify-center">
-                  <img src="/logo.png" alt="M" className="h-12 w-12 object-contain" onError={(e) => e.target.style.display = 'none'} />
-                </div>
-                <div className="text-center">
-                  <p className="text-lg font-semibold">{appName}</p>
-                  <p className="text-xs text-[color:var(--muted)]">Pinkwave edition</p>
-                </div>
-              </div>
-
-              {/* Login / Auth Logic */}
-              <div className="mb-6 border-b border-white/10 pb-6">
-                {user ? (
-                  <div className="rounded-xl bg-white/5 p-3 text-center">
-
-                    {/* ✅ Avatar in sidebar */}
-                    <div className="mx-auto h-10 w-10 rounded-full overflow-hidden mb-2 border border-white/10 bg-white/5 flex items-center justify-center">
-                      {avatarSrc ? (
-                        <img
-                          src={avatarSrc}
-                          alt="avatar"
-                          className="h-full w-full object-cover"
-                          onError={(e) => {
-                            e.currentTarget.style.display = "none";
-                          }}
-                        />
-                      ) : (
-                        <span className="font-bold text-white uppercase">
-                          {user?.userName ? user.userName.charAt(0) : 'U'}
-                        </span>
-                      )}
-                    </div>
-
-                    <button onClick={() => navigate('/profile')} className="text-sm font-semibold hover:text-pink-200">
-                      {user?.userName || 'My Profile'}
-                    </button>
-                    <button onClick={handleLogOut} className="block w-full text-xs text-pink-400 hover:text-pink-300 mt-1">
-                      Log Out
-                    </button>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2">
-                    <button onClick={() => navigate('/login')} className="rounded-xl bg-pink-500 px-3 py-2 text-xs font-bold text-black hover:bg-pink-400 transition">
-                      Login
-                    </button>
-                    <button onClick={() => navigate('/register')} className="rounded-xl border border-white/10 px-3 py-2 text-xs hover:bg-white/5 transition">
-                      Register
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <nav className="space-y-2 text-sm">
-                {['Home', 'Search', 'Your Library', 'Create Playlist'].map((item) => (
+              <nav className="space-y-2 text-sm border-b border-white/10 pb-4">
+                {['Home', 'Search', 'Your Library'].map((item) => (
                   <button
                     key={item}
                     onClick={() => {
@@ -1139,15 +1263,59 @@ useEffect(() => {
                 ))}
               </nav>
 
-              <div className="mt-8 flex-1 min-h-0 flex flex-col">
-                <div className="flex items-center justify-between">
+              <div className="mt-4 flex-1 min-h-0 flex flex-col">
+                <div className="flex items-center justify-between gap-2">
                   <p className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">Playlists</p>
-                  <button onClick={createPlaylist}><FaPlus className="text-[12px] text-white/40 cursor-pointer hover:text-white" /></button>
+                  <button
+                    onClick={() => createPlaylist()}
+                    className="rounded-lg border border-white/10 px-2 py-1 text-[11px] text-white/70 hover:bg-white/10 hover:text-white transition"
+                  >
+                    <FaPlus className="text-[10px]" />
+                  </button>
                 </div>
+
+                <div className="mt-3 flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={newPlaylistName}
+                    onChange={(e) => setNewPlaylistName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        createPlaylist()
+                      }
+                    }}
+                    placeholder="New playlist name"
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white placeholder:text-white/35 outline-none focus:border-pink-500/50"
+                  />
+                </div>
+
                 <div className="mt-3 flex-1 min-h-0 overflow-y-auto pr-1 custom-scrollbar space-y-1 text-sm text-[color:var(--muted)]">
-                  {playlists.map((list) => (
-                    <div key={list} className="w-full min-w-0 rounded-lg px-2 py-1.5 transition hover:bg-white/5 hover:text-white cursor-pointer truncate">
-                      {list}
+                  {playlists.map((playlist) => (
+                    <div
+                      key={playlist.id}
+                      className={`w-full min-w-0 rounded-xl border px-2 py-2 transition cursor-pointer flex items-center justify-between gap-2 ${playlist.id === activePlaylistId ? 'border-pink-500/30 bg-pink-500/10 text-white' : 'border-transparent hover:bg-white/5 hover:text-white'}`}
+                      onClick={() => {
+                        setActivePlaylistId(playlist.id)
+                        setRightPanelMode('playlist')
+                      }}
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-semibold">{playlist.name}</p>
+                        <p className="text-[10px] text-white/45">{playlist.tracks.length} tracks</p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={playlists.length <= 1}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          removePlaylist(playlist.id)
+                        }}
+                        className="text-white/30 hover:text-rose-300 disabled:opacity-20 disabled:cursor-not-allowed"
+                        aria-label={`Delete ${playlist.name}`}
+                      >
+                        <FaTrash className="text-[11px]" />
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -1228,30 +1396,58 @@ useEffect(() => {
                 {isSearchResultsOpen && (
                   <div className="grid gap-4">
                     {searchResults.slice(0, visibleSearchCount || searchResults.length).map((result, index) => (
-                      <div key={`${result.webpage_url || result.title || 'result'}-${index}`} className="min-w-0 flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 md:flex-row md:items-center animate-in fade-in slide-in-from-bottom-2 duration-300" style={{ animationDelay: `${index * 60}ms` }}>
+                      <div key={`${result.webpage_url || result.title || 'result'}-${index}`} className="relative min-w-0 flex flex-col gap-4 overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-4 md:flex-row md:items-center animate-in fade-in slide-in-from-bottom-2 duration-300" style={{ animationDelay: `${index * 60}ms` }}>
                         {result.thumbnail ? (
-                          <img src={result.thumbnail} alt="Thumbnail" className="h-24 w-24 shrink-0 rounded-2xl object-cover shadow-[0_10px_30px_rgba(236,72,153,0.25)]" />
+                          <button
+                            type="button"
+                            onClick={() => playTrack(result)}
+                            className="group relative h-24 w-24 shrink-0 overflow-hidden rounded-2xl shadow-[0_10px_30px_rgba(236,72,153,0.25)]"
+                            aria-label={`Play ${result.title || 'track'}`}
+                          >
+                            <img src={result.thumbnail} alt="Thumbnail" className="h-full w-full object-cover" />
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100">
+                              <FaPlay className="text-white" />
+                            </div>
+                          </button>
                         ) : (
-                          <div className="h-24 w-24 shrink-0 rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500" />
+                          <button
+                            type="button"
+                            onClick={() => playTrack(result)}
+                            className="group relative h-24 w-24 shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500"
+                            aria-label={`Play ${result.title || 'track'}`}
+                          >
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/35 opacity-0 transition group-hover:opacity-100">
+                              <FaPlay className="text-white" />
+                            </div>
+                          </button>
                         )}
 
-                        <div className="min-w-0 flex-1">
+                        <div className="min-w-0 flex-1 pr-16 md:pr-24 xl:pr-28">
                           <p className="truncate text-lg font-semibold">{result.title || 'Unknown title'}</p>
                           <p className="mt-1 truncate text-sm text-white/60">{result.artist || 'Unknown artist'}</p>
                         </div>
 
-                        <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+                        <div className="absolute right-0 top-0 bottom-0 flex w-14 flex-col border-l border-white/10 bg-white/[0.03] md:w-20 xl:w-24">
                           <button
                             onClick={() => playTrack(result)}
-                            className="flex w-full items-center justify-center gap-2 rounded-full bg-[#00ff00] px-5 py-2 text-sm font-bold text-black transition hover:scale-105 hover:bg-[#00cc00] sm:w-auto"
+                            className="flex flex-1 items-center justify-center gap-1.5 border-b border-white/10 text-[10px] font-semibold text-[#00ff99] transition hover:bg-white/10 md:gap-2"
                           >
-                            <FaPlay /> Play
+                            <FaPlay size={11} />
+                            <span className="whitespace-nowrap text-[9px] leading-none">Play</span>
                           </button>
                           <button
                             onClick={() => addToQueue(result)}
-                            className="flex w-full items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/10 sm:w-auto"
+                            className="flex flex-1 items-center justify-center gap-1.5 border-b border-white/10 text-[10px] font-semibold text-white/75 transition hover:bg-white/10 hover:text-white md:gap-2"
                           >
-                            <MdQueueMusic /> Queue
+                            <MdQueueMusic size={13} />
+                            <span className="whitespace-nowrap text-[9px] leading-none">Queue</span>
+                          </button>
+                          <button
+                            onClick={() => addTrackToPlaylist(result)}
+                            className="flex flex-1 items-center justify-center gap-1.5 text-[10px] font-semibold text-pink-200 transition hover:bg-pink-500/20 md:gap-2"
+                          >
+                            <FaPlus size={11} />
+                            <span className="whitespace-nowrap text-[9px] leading-none">Save</span>
                           </button>
                         </div>
                       </div>
@@ -1273,7 +1469,7 @@ useEffect(() => {
                   <div
                     key={i}
                     onClick={() => playTrack(song)}
-                    className="group flex w-full min-w-0 max-w-full flex-col gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 transition hover:border-pink-500/30 hover:bg-white/10 cursor-pointer min-[1180px]:flex-row min-[1180px]:items-center min-[1180px]:gap-4">
+                    className="group relative flex w-full min-w-0 max-w-full flex-col gap-3 overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-3 transition hover:border-pink-500/30 hover:bg-white/10 cursor-pointer min-[1180px]:flex-row min-[1180px]:items-center min-[1180px]:gap-4">
                     <div className="relative h-16 w-16 min-w-[4rem]">
                       <img src={song.thumbnail} className="h-full w-full rounded-xl object-cover" alt="art" />
                       <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition rounded-xl">
@@ -1281,20 +1477,51 @@ useEffect(() => {
                       </div>
                     </div>
 
-                    <div className="min-w-0 flex-1 overflow-hidden">
+                    <div className="min-w-0 flex-1 overflow-hidden pr-10 md:pr-12 2xl:pr-16">
                       <p className="text-sm font-semibold truncate">{song.title}</p>
                       <p className="text-xs text-[color:var(--muted)] truncate">{song.artist}</p>
                     </div>
 
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        addToQueue(song);
-                      }}
-                      className="mt-1 inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/10 min-[1180px]:mt-0 min-[1180px]:w-auto min-[1180px]:shrink-0 min-[1180px]:px-4 min-[1180px]:text-sm"
-                    >
-                      <MdQueueMusic size={18} /> Queue
-                    </button>
+                    <div className="absolute right-0 top-0 bottom-0 flex w-10 flex-col border-l border-white/10 bg-white/[0.03] md:w-11 2xl:w-16">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          playTrack(song);
+                        }}
+                        className="flex flex-1 items-center justify-center gap-1 border-b border-white/10 text-[#00ff99] transition hover:bg-white/10 2xl:flex-col 2xl:gap-0.5"
+                        aria-label={`Play ${song.title || 'track'}`}
+                        title="Play"
+                      >
+                        <FaPlay size={10} />
+                        <span className="hidden 2xl:block text-[8px] leading-none">Play</span>
+                      </button>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          addToQueue(song);
+                        }}
+                        className="flex flex-1 items-center justify-center gap-1 border-b border-white/10 text-white/75 transition hover:bg-white/10 hover:text-white 2xl:flex-col 2xl:gap-0.5"
+                        aria-label={`Queue ${song.title || 'track'}`}
+                        title="Queue"
+                      >
+                        <MdQueueMusic size={12} />
+                        <span className="hidden 2xl:block text-[8px] leading-none">Queue</span>
+                      </button>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          addTrackToPlaylist(song);
+                        }}
+                        className="flex flex-1 items-center justify-center gap-1 text-pink-200 transition hover:bg-pink-500/20 2xl:flex-col 2xl:gap-0.5"
+                        aria-label={`Save ${song.title || 'track'}`}
+                        title="Save"
+                      >
+                        <FaPlus size={10} />
+                        <span className="hidden 2xl:block text-[8px] leading-none">Save</span>
+                      </button>
+                    </div>
                   </div>
                 )) : (
                   <div className="col-span-2 py-8 text-center text-white/30 text-sm">Loading trends...</div>
@@ -1316,7 +1543,7 @@ useEffect(() => {
               ) : (
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   {quickPicks.map((item, i) => (
-                    <div key={i} className="group flex items-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-3 transition hover:border-pink-500/30">
+                    <div key={i} className="group relative flex items-center gap-4 overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-3 transition hover:border-pink-500/30">
                       <div className="h-16 w-16 rounded-2xl bg-white/10 overflow-hidden relative">
                         <img src={item.thumbnail} className="h-full w-full object-cover" alt="" />
                         <button
@@ -1325,10 +1552,37 @@ useEffect(() => {
                           <FaPlay className="text-white" />
                         </button>
                       </div>
-                      <div className="flex-1 overflow-hidden">
+                      <div className="flex-1 overflow-hidden pr-10 md:pr-12 2xl:pr-16">
                         <p className="text-sm font-semibold truncate">{item.title}</p>
                         <p className="text-xs text-[color:var(--muted)] truncate">{item.artist}</p>
                         <p className="text-[10px] text-pink-400 mt-1">{item.count} plays</p>
+                      </div>
+
+                      <div className="absolute right-0 top-0 bottom-0 flex w-10 flex-col border-l border-white/10 bg-white/[0.03] md:w-11 2xl:w-16">
+                        <button
+                          onClick={() => playTrack(item)}
+                          className="flex flex-1 items-center justify-center gap-1 border-b border-white/10 text-[#00ff99] transition hover:bg-white/10 2xl:flex-col 2xl:gap-0.5"
+                          aria-label={`Play ${item.title || 'track'}`}
+                        >
+                          <FaPlay size={10} />
+                          <span className="hidden 2xl:block text-[8px] leading-none">Play</span>
+                        </button>
+                        <button
+                          onClick={() => addToQueue(item)}
+                          className="flex flex-1 items-center justify-center gap-1 border-b border-white/10 text-white/75 transition hover:bg-white/10 hover:text-white 2xl:flex-col 2xl:gap-0.5"
+                          aria-label={`Queue ${item.title || 'track'}`}
+                        >
+                          <MdQueueMusic size={12} />
+                          <span className="hidden 2xl:block text-[8px] leading-none">Queue</span>
+                        </button>
+                        <button
+                          onClick={() => addTrackToPlaylist(item)}
+                          className="flex flex-1 items-center justify-center gap-1 text-pink-200 transition hover:bg-pink-500/20 2xl:flex-col 2xl:gap-0.5"
+                          aria-label={`Save ${item.title || 'track'}`}
+                        >
+                          <FaPlus size={10} />
+                          <span className="hidden 2xl:block text-[8px] leading-none">Save</span>
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -1351,12 +1605,58 @@ useEffect(() => {
 
             <div className="rounded-3xl border border-white/10 bg-[color:var(--panel)]/80 p-5 flex-1 flex flex-col overflow-hidden">
               <div className="flex items-center justify-between mb-2">
-                <p className="text-xs uppercase tracking-[0.3em] text-[color:var(--muted)]">Queue</p>
-                <span className="text-[10px] text-white/30">{queue.length} tracks</span>
+                <p className="text-xs uppercase tracking-[0.3em] text-[color:var(--muted)]">
+                  {rightPanelMode === 'playlist' ? (activePlaylist?.name || 'Playlist') : 'Queue'}
+                </p>
+                <span className="text-[10px] text-white/30">
+                  {rightPanelMode === 'playlist' ? `${activePlaylist?.tracks?.length || 0} tracks` : `${queue.length} tracks`}
+                </span>
+              </div>
+
+              <div className="mb-2 flex items-center gap-2">
+                <button
+                  onClick={() => setRightPanelMode('queue')}
+                  className={`rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition ${rightPanelMode === 'queue' ? 'bg-white/15 text-white' : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'}`}
+                >
+                  Queue
+                </button>
+                <button
+                  onClick={() => setRightPanelMode('playlist')}
+                  className={`rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition ${rightPanelMode === 'playlist' ? 'bg-pink-500/25 text-pink-100' : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'}`}
+                >
+                  Playlist
+                </button>
               </div>
 
               <div className="mt-2 flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-                {queue.length === 0 ? (
+                {rightPanelMode === 'playlist' ? (
+                  activePlaylist?.tracks?.length ? (
+                    activePlaylist.tracks.map((track, index) => (
+                      <div
+                        key={`${track.webpage_url || track.title}-${index}`}
+                        onClick={() => playTrack(track)}
+                        className="flex items-center gap-3 p-2 rounded-xl transition cursor-pointer hover:bg-white/5 border border-transparent"
+                      >
+                        <div className="h-10 w-10 rounded-lg overflow-hidden shrink-0 relative">
+                          {track.thumbnail ? (
+                            <img src={track.thumbnail} className="h-full w-full object-cover" alt="" />
+                          ) : (
+                            <div className="h-full w-full bg-white/10" />
+                          )}
+                        </div>
+                        <div className="overflow-hidden">
+                          <p className="text-xs font-bold truncate text-white">{track.title}</p>
+                          <p className="text-[10px] text-[color:var(--muted)] truncate">{track.artist}</p>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-white/20 text-center">
+                      <FaPlus className="text-xl mb-2 opacity-50" />
+                      <p className="text-xs">Playlist is empty</p>
+                    </div>
+                  )
+                ) : queue.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-white/20 text-center">
                     <MdQueueMusic className="text-3xl mb-2 opacity-50" />
                     <p className="text-xs">Queue is empty</p>
@@ -1414,16 +1714,31 @@ useEffect(() => {
 
               <div className="flex flex-col items-center w-full sm:flex-1 sm:max-w-lg">
                 <div className="flex items-center gap-6 mb-1">
-                  <button className="text-[color:var(--muted)] hover:text-white" onClick={handlePrevTrack}><FaStepBackward className="text-[#00ff00]" /></button>
+                  <button
+                    className={`player-skip ${isPlaying ? 'is-stop' : 'is-play'}`}
+                    onClick={handlePrevTrack}
+                    aria-label="Previous track"
+                  >
+                    <span className="player-skip__glyph" aria-hidden="true">⏮</span>
+                  </button>
 
                   <button
                     onClick={togglePlayback}
-                    className="relative z-0 rounded-full bg-[#00ff00] flex items-center justify-center shadow-[0_0_15px_rgba(0,255,0,0.4)] hover:scale-110 transition text-black">
-                    {isPlaying ? (<FaPause style={iconStyle} className="relative z-10 text-black fill-current" />)
-                      : (<FaPlay style={iconStyle} className="ml-1 relative z-10 text-black fill-current" />)}
+                    className={`player-toggle ${isPlaying ? 'is-stop' : 'is-play'}`}
+                    aria-label={isPlaying ? 'Pause playback' : 'Start playback'}
+                  >
+                    <span className="player-toggle__glow" aria-hidden="true" />
+                    {isPlaying ? (<FaPause style={iconStyle} className="relative z-10 text-white fill-current drop-shadow-[0_0_6px_rgba(255,255,255,0.35)]" />)
+                      : (<FaPlay style={iconStyle} className="ml-0.5 relative z-10 text-white fill-current drop-shadow-[0_0_6px_rgba(255,255,255,0.35)]" />)}
                   </button>
 
-                  <button className="text-[color:var(--muted)] hover:text-white" onClick={handleNextTrack}><FaStepForward className="text-[#00ff00]" /></button>
+                  <button
+                    className={`player-skip ${isPlaying ? 'is-stop' : 'is-play'}`}
+                    onClick={handleNextTrack}
+                    aria-label="Next track"
+                  >
+                    <span className="player-skip__glyph" aria-hidden="true">⏭</span>
+                  </button>
                 </div>
 
                 <div className="w-full flex items-center gap-3 text-xs sm:text-[15px] text-pink-500 font-bold ">

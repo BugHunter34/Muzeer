@@ -4,11 +4,14 @@ const tokenAdminActionSchema = new mongoose.Schema(
   {
     adminId: { type: mongoose.Schema.Types.ObjectId, ref: 'Login', required: true },
     adminUserName: { type: String, required: true },
-    targetUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'Login', required: true },
-    targetUserName: { type: String, required: true },
-    delta: { type: Number, required: true },
-    resultingBalance: { type: Number, required: true },
-    symbol: { type: String, default: 'MUZR' }
+    actionType: { type: String, default: 'token_adjust' },
+    summary: { type: String, required: true },
+    targetUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'Login' },
+    targetUserName: { type: String },
+    delta: { type: Number },
+    resultingBalance: { type: Number },
+    symbol: { type: String, default: 'MUZR' },
+    metadata: { type: mongoose.Schema.Types.Mixed, default: {} }
   },
   { timestamps: true }
 );

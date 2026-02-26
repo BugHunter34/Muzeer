@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');   
 const admin = require('../middleware/admin'); 
+const owner = require('../middleware/owner');
 const Login = require('../models/login');     
 const TokenAdminAction = require('../models/tokenAdminAction');
 const TokenControl = require('../models/tokenControl');
@@ -34,6 +35,25 @@ async function getOrCreateTokenControl() {
   return control;
 }
 
+async function logAdminAction(req, payload) {
+  const normalizedPayload = {
+    actionType: payload?.actionType || 'admin_action',
+    summary: payload?.summary || 'Admin action executed',
+    targetUserId: payload?.targetUserId || req.user.id,
+    targetUserName: payload?.targetUserName || req.user.userName || req.user.email || 'system',
+    delta: Number.isFinite(payload?.delta) ? Number(payload.delta) : 0,
+    resultingBalance: Number.isFinite(payload?.resultingBalance) ? Number(payload.resultingBalance) : 0,
+    symbol: payload?.symbol || 'MUZR',
+    metadata: payload?.metadata || {}
+  };
+
+  return TokenAdminAction.create({
+    adminId: req.user.id,
+    adminUserName: req.user.userName || req.user.email || 'admin',
+    ...normalizedPayload
+  });
+}
+
 // 1. GET ALL USERS
 router.get('/users', [auth, admin], async (req, res) => {
   try {
@@ -46,24 +66,37 @@ router.get('/users', [auth, admin], async (req, res) => {
 });
 
 // Toggle Ban Status
-router.patch('/users/:userId/ban', async (req, res) => {
+router.patch('/users/:userId/ban', [auth, admin], async (req, res) => {
   try {
     const { isBanned } = req.body;
+    const nextBanState = Boolean(isBanned);
     
     // Prevent admin from banning themselves
     if (req.user && req.user.id === req.params.userId) {
       return res.status(403).json({ message: "You cannot ban yourself." });
     }
 
-    const updatedUser = await Login.findByIdAndUpdate(
-      req.params.userId,
-      { isBanned: isBanned },
-      { new: true }
-    );
-
-    if (!updatedUser) {
+    const existingUser = await Login.findById(req.params.userId);
+    if (!existingUser) {
       return res.status(404).json({ message: "User not found" });
     }
+
+    const wasBanned = Boolean(existingUser.isBanned);
+    existingUser.isBanned = nextBanState;
+    await existingUser.save();
+
+    const updatedUser = existingUser;
+
+    await logAdminAction(req, {
+      actionType: nextBanState ? 'ban_user' : 'unban_user',
+      summary: `${nextBanState ? 'Banned' : 'Unbanned'} ${updatedUser.userName}`,
+      targetUserId: updatedUser._id,
+      targetUserName: updatedUser.userName,
+      metadata: {
+        wasBanned,
+        isBanned: nextBanState
+      }
+    });
 
     res.status(200).json({ message: "Ban status updated", user: updatedUser });
   } catch (error) {
@@ -91,6 +124,14 @@ router.patch('/users/:id/role', [auth, admin], async (req, res) => {
     userToUpdate.role = (userToUpdate.role === 'admin') ? 'user' : 'admin';
     
     await userToUpdate.save();
+
+    await logAdminAction(req, {
+      actionType: userToUpdate.role === 'admin' ? 'grant_admin' : 'revoke_admin',
+      summary: `${userToUpdate.role === 'admin' ? 'Granted admin to' : 'Revoked admin from'} ${userToUpdate.userName}`,
+      targetUserId: userToUpdate._id,
+      targetUserName: userToUpdate.userName,
+      metadata: { role: userToUpdate.role }
+    });
     
     res.json({ message: "Role updated successfully", user: userToUpdate });
   } catch (err) {
@@ -107,7 +148,20 @@ router.delete('/users/:id', [auth, admin], async (req, res) => {
       return res.status(400).json({ message: "You cannot nuke yourself!" });
     }
 
+    const userToDelete = await Login.findById(req.params.id);
+    if (!userToDelete) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
     await Login.findByIdAndDelete(req.params.id);
+
+    await logAdminAction(req, {
+      actionType: 'delete_user',
+      summary: `Deleted user ${userToDelete.userName}`,
+      targetUserId: userToDelete._id,
+      targetUserName: userToDelete.userName
+    });
+
     res.json({ message: "User eradicated" });
   } catch (err) {
     res.status(500).json({ message: "Server error" });
@@ -115,7 +169,7 @@ router.delete('/users/:id', [auth, admin], async (req, res) => {
 });
 
 // 4. ADMIN TOKEN ADJUST (mint/burn for testing)
-router.patch('/users/:id/token', [auth, admin], async (req, res) => {
+router.patch('/users/:id/token', [auth, owner], async (req, res) => {
   try {
     const control = await getOrCreateTokenControl();
     if (!control.allowAdminMintBurn) {
@@ -171,9 +225,9 @@ router.patch('/users/:id/token', [auth, admin], async (req, res) => {
 
     await userToUpdate.save();
 
-    await TokenAdminAction.create({
-      adminId: req.user.id,
-      adminUserName: req.user.userName || req.user.email || 'admin',
+    await logAdminAction(req, {
+      actionType: 'token_adjust',
+      summary: `${delta > 0 ? 'Minted' : 'Burned'} ${Math.abs(delta)} ${userToUpdate.tokenWallet.symbol || 'MUZR'} ${delta > 0 ? 'to' : 'from'} ${userToUpdate.userName}`,
       targetUserId: userToUpdate._id,
       targetUserName: userToUpdate.userName,
       delta,
@@ -209,7 +263,7 @@ router.patch('/users/:id/token', [auth, admin], async (req, res) => {
 });
 
 // 5. SET EXACT USER TOKEN BALANCE (full control)
-router.put('/users/:id/token', [auth, admin], async (req, res) => {
+router.put('/users/:id/token', [auth, owner], async (req, res) => {
   try {
     const nextBalance = Number(req.body?.balance);
 
@@ -234,9 +288,9 @@ router.put('/users/:id/token', [auth, admin], async (req, res) => {
 
     await userToUpdate.save();
 
-    await TokenAdminAction.create({
-      adminId: req.user.id,
-      adminUserName: req.user.userName || req.user.email || 'admin',
+    await logAdminAction(req, {
+      actionType: 'token_set_balance',
+      summary: `Set ${userToUpdate.userName} balance to ${nextBalance} ${userToUpdate.tokenWallet.symbol || 'MUZR'}`,
       targetUserId: userToUpdate._id,
       targetUserName: userToUpdate.userName,
       delta,
@@ -278,7 +332,7 @@ router.get('/token-actions', [auth, admin], async (req, res) => {
   try {
     const actions = await TokenAdminAction.find()
       .sort({ createdAt: -1 })
-      .limit(20)
+      .limit(50)
       .lean();
 
     res.json(actions);
@@ -297,7 +351,7 @@ router.get('/token-control', [auth, admin], async (req, res) => {
   }
 });
 
-router.patch('/token-control', [auth, admin], async (req, res) => {
+router.patch('/token-control', [auth, owner], async (req, res) => {
   try {
     const control = await getOrCreateTokenControl();
 
@@ -364,6 +418,17 @@ router.patch('/token-control', [auth, admin], async (req, res) => {
     control.allowAdminMintBurn = Boolean(control.allowAdminMintBurn);
 
     await control.save();
+
+    await logAdminAction(req, {
+      actionType: 'token_control_update',
+      summary: 'Updated global token control settings',
+      metadata: {
+        symbol: control.symbol,
+        rewardsPaused: control.rewardsPaused,
+        allowAdminMintBurn: control.allowAdminMintBurn
+      }
+    });
+
     res.json({ message: 'Token control updated', control });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
