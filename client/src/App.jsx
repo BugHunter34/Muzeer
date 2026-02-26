@@ -1239,7 +1239,7 @@ useEffect(() => {
         <div className="mx-auto grid w-full max-w-[1600px] grid-cols-1 gap-6 px-4 pt-6 sm:px-5 lg:grid-cols-[320px_1fr_340px] lg:pt-8">
 
           {/* --- LEFT SIDEBAR --- */}
-          <aside className="hidden flex-col gap-6 lg:flex max-h-[calc(100vh-220px)] min-h-0">
+          <aside className="hidden flex-col gap-6 lg:flex max-h-[calc(100vh-var(--player-offset)-96px)] min-h-0">
             <div className="rounded-3xl border border-white/10 bg-[color:var(--panel)]/80 p-5 backdrop-blur h-full min-h-0 flex flex-col overflow-hidden">
               <nav className="space-y-2 text-sm border-b border-white/10 pb-4">
                 {['Home', 'Search', 'Your Library'].map((item) => (
@@ -1324,7 +1324,7 @@ useEffect(() => {
           </aside>
 
           {/* --- MIDDLE CONTENT --- */}
-          <main className="min-w-0 space-y-6 overflow-y-auto pr-1 custom-scrollbar max-h-[calc(100vh-220px)]">
+          <main className="min-w-0 space-y-6 overflow-y-auto pr-1 custom-scrollbar max-h-[calc(100vh-var(--player-offset)-96px)]">
             <header className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
               <div>
                 <p className="text-xs uppercase tracking-[0.4em] text-[color:var(--muted)]">Text</p>
@@ -1592,7 +1592,7 @@ useEffect(() => {
           </main>
 
           {/* --- RIGHT SIDEBAR --- */}
-          <aside className="hidden space-y-6 xl:flex xl:flex-col h-[calc(100vh-220px)] sticky top-24">
+          <aside className="hidden space-y-6 xl:flex xl:flex-col h-[calc(100vh-var(--player-offset)-96px)] sticky top-24">
             <TokenCompartment
               tokenWallet={tokenWallet}
               onRefresh={loadTokenWallet}
@@ -1690,8 +1690,8 @@ useEffect(() => {
         </div>
 
         {/* --- BOTTOM PLAYER --- */}
-        <div className="fixed bottom-0 left-0 right-0 z-[100] px-4 pb-3 sm:px-5 sm:pb-4">
-          <div className="mx-auto max-w-[1600px] rounded-3xl border border-white/10 bg-[color:var(--panel)]/95 px-4 py-3 backdrop-blur sm:px-6">
+        <div className="fixed bottom-0 left-0 right-0 z-[100] px-2 pb-3 sm:px-3 sm:pb-4">
+          <div className="mx-auto max-w-[1580px] rounded-3xl border border-white/10 bg-[color:var(--panel)]/95 px-4 py-3 backdrop-blur sm:px-5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
 
               <div className="flex items-center gap-4 w-full sm:w-1/4 sm:min-w-[200px]">
