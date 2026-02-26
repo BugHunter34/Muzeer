@@ -45,6 +45,32 @@ router.get('/users', [auth, admin], async (req, res) => {
   }
 });
 
+// Toggle Ban Status
+router.patch('/users/:userId/ban', async (req, res) => {
+  try {
+    const { isBanned } = req.body;
+    
+    // Prevent admin from banning themselves
+    if (req.user && req.user.id === req.params.userId) {
+      return res.status(403).json({ message: "You cannot ban yourself." });
+    }
+
+    const updatedUser = await Login.findByIdAndUpdate(
+      req.params.userId,
+      { isBanned: isBanned },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.status(200).json({ message: "Ban status updated", user: updatedUser });
+  } catch (error) {
+    console.error("Ban Error:", error);
+    res.status(500).json({ message: "Server error updating ban status" });
+  }
+});
 // 2. TOGGLE ADMIN ROLE
 router.patch('/users/:id/role', [auth, admin], async (req, res) => {
   try {

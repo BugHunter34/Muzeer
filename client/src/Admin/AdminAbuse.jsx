@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { FaSearch, FaShieldAlt, FaTrash, FaUserShield } from 'react-icons/fa';
+import { FaSearch, FaShieldAlt, FaTrash, FaUserShield, FaBan } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
 
 export default function AdminAbuse() {
@@ -146,7 +146,31 @@ export default function AdminAbuse() {
     }
   };
 
-  // 3. Handle Nuke User
+  // 3. Handle Ban User (Soft Delete / Suspension)
+  const toggleBan = async (userId, userName, isCurrentlyBanned) => {
+    const action = isCurrentlyBanned ? "unban" : "ban";
+    if (!window.confirm(`Are you sure you want to ${action} ${userName}?`)) return;
+
+    try {
+      const res = await fetch(`http://localhost:3000/api/admin/users/${userId}/ban`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isBanned: !isCurrentlyBanned })
+      });
+      
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.message || `Failed to ${action} user`);
+        return;
+      }
+      fetchUsers(); // Refresh the list
+    } catch (err) {
+      alert(`Server error while trying to ${action} user`);
+    }
+  };
+
+  // 4. Handle Nuke User (Hard Delete)
   const nukeUser = async (userId, userName) => {
     if (!window.confirm(`Are you SURE you want to eradicate ${userName}? This cannot be undone.`)) return;
     
@@ -243,7 +267,7 @@ export default function AdminAbuse() {
     }
   };
 
-  // 4. Real-time Search Filter
+  // Real-time Search Filter
   const filteredUsers = users.filter(u => 
     u.userName?.toLowerCase().includes(searchQuery.toLowerCase()) || 
     u.email?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -367,18 +391,19 @@ export default function AdminAbuse() {
               </div>
             ) : (
               filteredUsers.map(u => (
-                <section key={u._id} className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-transparent p-5 transition hover:border-yellow-400/30 hover:bg-white/10">
+                <section key={u._id} className={`rounded-2xl border transition p-5 ${u.isBanned ? 'border-orange-500/40 bg-orange-500/5' : 'border-white/10 bg-gradient-to-br from-white/5 to-transparent hover:border-yellow-400/30 hover:bg-white/10'}`}>
                   <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                     
                     {/* User Info */}
                     <div className="flex items-center gap-4">
-                      <div className="h-12 w-12 rounded-full bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center font-bold text-xl uppercase">
+                      <div className={`h-12 w-12 rounded-full flex items-center justify-center font-bold text-xl uppercase ${u.isBanned ? 'bg-orange-500/50 text-orange-200' : 'bg-gradient-to-br from-pink-500 to-rose-500'}`}>
                         {u.userName ? u.userName.charAt(0) : '?'}
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <h2 className="text-xl font-bold">{u.userName}</h2>
+                          <h2 className={`text-xl font-bold ${u.isBanned ? 'line-through text-white/60' : ''}`}>{u.userName}</h2>
                           {u.role === 'admin' && <FaUserShield className="text-yellow-400" title="Admin" />}
+                          {u.isBanned && <span className="text-[10px] uppercase font-bold tracking-wider text-orange-400 bg-orange-400/10 px-2 py-0.5 rounded">Banned</span>}
                         </div>
                         <p className="text-sm text-white/60">{u.email}</p>
                         <p className="text-xs text-emerald-300/80 mt-1">
@@ -388,7 +413,7 @@ export default function AdminAbuse() {
                     </div>
 
                     {/* Admin Action Buttons */}
-                    <div className="flex flex-wrap gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                       <button
                         onClick={() => toggleRole(u._id)}
                         className={`inline-flex items-center gap-2 rounded-full border px-5 py-2 text-sm font-medium transition ${
@@ -399,7 +424,20 @@ export default function AdminAbuse() {
                       >
                         <FaShieldAlt /> {u.role === 'admin' ? 'Revoke Admin' : 'Grant Admin'}
                       </button>
+
+                      {/* NEW: Ban Toggle Button */}
+                      <button
+                        onClick={() => toggleBan(u._id, u.userName, u.isBanned)}
+                        className={`inline-flex items-center gap-2 rounded-full border px-5 py-2 text-sm font-medium transition ${
+                          u.isBanned
+                            ? 'border-orange-500/50 bg-orange-500/10 text-orange-400 hover:bg-orange-500/20'
+                            : 'border-white/10 bg-white/5 text-white hover:bg-white/10'
+                        }`}
+                      >
+                        <FaBan /> {u.isBanned ? 'Unban User' : 'Ban User'}
+                      </button>
                       
+                      {/* Existing Nuke Button */}
                       <button
                         onClick={() => nukeUser(u._id, u.userName)}
                         className="inline-flex items-center gap-2 rounded-full border border-red-500/20 bg-red-500/10 px-5 py-2 text-sm font-medium text-red-400 transition hover:bg-red-500 hover:text-white"

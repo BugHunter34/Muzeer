@@ -29,7 +29,11 @@ const loginSchema = new mongoose.Schema({
     enum: ["user", "admin", "owner"],
     default: "user"
   },
-
+  
+  isBanned: { 
+    type: Boolean, 
+    default: false 
+  },
   // --- Discord link (separátně od avataru) ---
   discordId: { type: String, sparse: true },   // Discord user ID
   discordName: { type: String, default: "" },  // Discord username/nick

@@ -118,35 +118,47 @@ function App() {
     audio_url: null
   })
 
-  // --- THE BAN HEARTBEAT ---
-  useEffect(() => {
-    if (!user) return;
+useEffect(() => {
+  if (!user) return;
 
-    const heartbeat = setInterval(async () => {
-      try {
-        const res = await fetch('http://localhost:3000/api/auth/verify', {
-          method: 'GET',
-          credentials: 'include'
-        });
+  const heartbeat = setInterval(async () => {
+    try {
+      const res = await fetch('http://localhost:3000/api/auth/verify', {
+        method: 'GET',
+        credentials: 'include'
+      });
 
-        if (res.status === 401) {
+      // 401: Token Expired, Missing, or User Deleted
+      if (res.status === 401) {
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
+        window.dispatchEvent(new Event("userUpdated"));
+        // Optional: redirect to login
+      } 
+      
+      // 403: User is actively BANNED in the database
+      else if (res.status === 403) {
+        const data = await res.json();
+        if (data.isBanned) {
           localStorage.setItem('banned', 'true');
           localStorage.removeItem('user');
           localStorage.removeItem('token');
           window.dispatchEvent(new Event("userUpdated"));
-          window.location.href = '/';
+          window.location.href = '/'; // Kick them out to the homepage/ban screen
         }
-        else if (res.status === 404) {
-          console.log("Can't connect to server")
-          alert("You're offline")
-        }
-      } catch (err) {
-        // silent
+      } 
+      
+      // 404: Server is unreachable
+      else if (res.status === 404) {
+        console.log("Can't connect to server");
       }
-    }, 10000);
+    } catch (err) {
+      // silent fail to avoid spamming the console if network drops
+    }
+  }, 10000);
 
-    return () => clearInterval(heartbeat);
-  }, [user]);
+  return () => clearInterval(heartbeat);
+}, [user]);
 
   // --- Current listen HEARTBEAT ---
   useEffect(() => {

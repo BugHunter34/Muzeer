@@ -7,7 +7,7 @@ var cors = require('cors');
 var mongoose = require('mongoose');
 var dns = require('dns');
 var dotenv = require('dotenv');
-
+const Login = require('./models/login');
 dotenv.config({ path: path.join(__dirname, '.env') });
 
 // --- Fix BOM in env keys ---
@@ -129,14 +129,40 @@ app.use('/api/auth', authRoutes);
 // Me router
 app.use('/api/me', require('./routes/me'));
 
+
+
 // Heartbeat verify
-app.get('/api/auth/verify', authMiddleware, (req, res) => {
-  res.status(200).json({ message: "User is alive" });
+app.get('/api/auth/verify', authMiddleware, async (req, res) => {
+  try {
+    // Note: Use req.user.id, req.user._id, or however your authMiddleware stores the user ID
+    const userId = req.user.id || req.user._id || req.user.userId; 
+    
+    // Fetch the freshest data from the database
+    const user = await Login.findById(userId);
+
+    // 1. User doesn't exist anymore (deleted)
+    if (!user) {
+      return res.status(401).json({ error: "User no longer exists" });
+    }
+
+    // 2. User exists, but an admin banned them
+    if (user.isBanned) {
+      return res.status(403).json({ error: "Account suspended", isBanned: true });
+    }
+
+    // 3. User is good to go
+    res.status(200).json({ 
+      message: "User is alive", 
+      isBanned: false,
+      role: user.role 
+    });
+
+  } catch (err) {
+    console.error("Heartbeat DB Check Error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
 });
-
 // --- EMAIL VERIFY ENDPOINT ---
-const Login = require('./models/login');
-
 app.get('/api/auth/verify-email/:token', async (req, res) => {
   try {
     const token = req.params.token;
