@@ -18,8 +18,23 @@ def parse_csv_env(value, fallback=""):
 # Allow your React app to talk to this service
 load_dotenv()
 
-allowed_origins = parse_csv_env(os.getenv("MEDIA_CORS_ALLOWED_ORIGINS"), "http://localhost:5173")
-CORS(app, resources={r"/*": {"origins": allowed_origins}})
+allowed_origins = parse_csv_env(
+    os.getenv("MEDIA_CORS_ALLOWED_ORIGINS"),
+    "http://localhost:5173,https://muzeer.com,https://www.muzeer.com",
+)
+CORS(app, origins=allowed_origins, supports_credentials=True)
+
+
+@app.after_request
+def apply_manual_cors_headers(response):
+    origin = request.headers.get("Origin")
+    if origin and origin in allowed_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Vary"] = "Origin"
+    return response
 
 YDL_OPTS = {
     "format": "bestaudio/best",

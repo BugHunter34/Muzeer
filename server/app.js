@@ -19,7 +19,10 @@ const parseCsvEnv = (value, fallback) => {
 };
 
 const isProduction = process.env.NODE_ENV === 'production';
-const allowedOrigins = parseCsvEnv(process.env.CORS_ALLOWED_ORIGINS, 'http://localhost:5173');
+const allowedOrigins = parseCsvEnv(
+  process.env.CORS_ALLOWED_ORIGINS,
+  'http://localhost:5173,https://muzeer.com,https://www.muzeer.com'
+);
 
 // --- Fix BOM in env keys ---
 Object.keys(process.env).forEach((key) => {
@@ -56,8 +59,14 @@ if (dnsServers.length > 0) {
 }
 
 async function connectDatabase() {
+  const skipDbConnect = process.env.SKIP_DB_CONNECT === '1';
   const databaseUri = process.env.DATABASE;
   const directDatabaseUri = process.env.DATABASE_DIRECT;
+
+  if (skipDbConnect) {
+    console.warn('SKIP_DB_CONNECT=1 detected. Server started without MongoDB connection.');
+    return;
+  }
 
   if (!databaseUri) {
     console.warn('DATABASE is not set in server/.env. Server started without MongoDB connection.');
@@ -68,7 +77,7 @@ async function connectDatabase() {
     await mongoose.connect(databaseUri, { serverSelectionTimeoutMS: 5000 });
     console.log('Connected to MongoDB');
   } catch (err) {
-    const isSrvDnsIssue = err && err.code === 'ECONNREFUSED' && err.syscall === 'querySrv';
+    const isSrvDnsIssue = err && err.syscall === 'querySrv';
 
     if (isSrvDnsIssue && directDatabaseUri) {
       try {
@@ -83,7 +92,7 @@ async function connectDatabase() {
     }
 
     if (isSrvDnsIssue) {
-      console.error('MongoDB SRV DNS lookup failed. Set DATABASE_DIRECT in server/.env or fix local DNS/network.');
+      console.error('MongoDB SRV DNS lookup failed. Check DATABASE SRV host, or set DATABASE_DIRECT in server/.env.');
       return;
     }
 

@@ -1,5 +1,13 @@
 Cloudflare-ready deployment setup
 
+One-click Direct Upload (your files, no Git connect needed)
+- Double-click ONE-CLICK-PAGES-UPLOAD.bat in repository root.
+- Enter:
+	API origin: https://api.yourdomain.com
+	Media origin: https://media.yourdomain.com
+- Script builds frontend and creates cloudflare-pages-upload.zip in repo root.
+- In Cloudflare: Workers & Pages -> Create application -> Pages -> Direct Upload -> upload cloudflare-pages-upload.zip.
+
 This repository is now prepared for a production setup where Cloudflare sits in front of your own servers.
 
 Important:
@@ -64,3 +72,23 @@ Quick smoke test after deployment
 - Log in and confirm the token cookie is set with Secure and HttpOnly
 - Confirm profile loads from api.example.com
 - Confirm search and trending load from media.example.com
+
+One-click local backend + Cloudflare tunnel
+- CF-TUNNEL-SETUP.bat
+	Runs login/create/route for:
+	api.muzeer.com -> tunnel muzeer-api
+	media.muzeer.com -> tunnel muzeer-media
+- START-BACKEND-NODE.bat
+	Starts Node backend (server/app.js via npm start) on 3000
+- START-BACKEND-MEDIA.bat
+	Starts Python media service (server.py) on 5000
+- START-TUNNEL-API.bat
+	Runs cloudflared tunnel for api.muzeer.com -> localhost:3000
+- START-TUNNEL-MEDIA.bat
+	Runs cloudflared tunnel for media.muzeer.com -> localhost:5000
+
+Startup order for full local-live mode
+1. START-BACKEND-NODE.bat
+2. START-BACKEND-MEDIA.bat
+3. START-TUNNEL-API.bat
+4. START-TUNNEL-MEDIA.bat

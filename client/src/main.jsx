@@ -7,6 +7,7 @@ import Register from './Login/Register.jsx'
 import Profile from './Profile/Profile.jsx'
 import SearchResults from './Search/SearchResults.jsx'
 import AdminAbuse from './Admin/AdminAbuse.jsx' // NEW: Admin dashboard
+const BUILD_STAMP = '2026-05-01-1809';
 // Remove index.css import here if it's breaking things
 // --- Grab User info from localStorage so we can conditionally render admin routes ---
 let user = null;
@@ -19,7 +20,8 @@ try {
 } catch (err) {
   console.error("Corrupted user data in main.jsx");
 }
-console.log("MAIN.JSX BOOTING UP! USER IS:", user);
+const canAccessAdmin = user?.role === 'admin' || user?.role === 'owner';
+console.log("MAIN.JSX BOOTING UP! USER IS:", user, 'BUILD:', BUILD_STAMP);
 
 if (isBanned) {
   // TERMINATION SCREEN
@@ -42,7 +44,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/register" element={<Register />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/search" element={<SearchResults />} />
-        <Route path="/admin" element={user?.role === 'admin' || 'owner' ? <AdminAbuse /> : <Navigate to="/" />} />
+        <Route path="/admin" element={canAccessAdmin ? <AdminAbuse /> : <Navigate to="/" />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>,
