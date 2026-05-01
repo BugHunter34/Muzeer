@@ -98,7 +98,8 @@ try {
     Remove-Item $zipPath -Force
   }
 
-  Compress-Archive -Path (Join-Path $distDir '*') -DestinationPath $zipPath -CompressionLevel Optimal
+  # Use tar for deterministic archive paths that Cloudflare Pages unpacks reliably.
+  tar -a -c -f $zipPath -C $distDir .
 
   Write-Host ''
   Write-Host 'DONE: Pages upload package is ready:' -ForegroundColor Green

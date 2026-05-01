@@ -7,7 +7,7 @@ import Register from './Login/Register.jsx'
 import Profile from './Profile/Profile.jsx'
 import SearchResults from './Search/SearchResults.jsx'
 import AdminAbuse from './Admin/AdminAbuse.jsx' // NEW: Admin dashboard
-const BUILD_STAMP = '2026-05-01-1809';
+const BUILD_STAMP = '2026-05-01-2030';
 // Remove index.css import here if it's breaking things
 // --- Grab User info from localStorage so we can conditionally render admin routes ---
 let user = null;

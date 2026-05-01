@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom';
 import './App.css'
 import './index.css'
-import { FaPlay, FaPause, FaVolumeUp, FaPlus, FaHeart, FaSearch, FaSlidersH, FaTrash } from 'react-icons/fa'
+import { FaPlay, FaPause, FaVolumeUp, FaPlus, FaHeart, FaSearch, FaSlidersH, FaTrash, FaRedo, FaRetweet, FaBan } from 'react-icons/fa'
 import { MdQueueMusic } from 'react-icons/md'
 import TokenCompartment from './components/TokenCompartment'
 import { API_BASE_URL, API_ORIGIN, MEDIA_API_BASE_URL, toAbsoluteApiUrl } from './config'
@@ -138,16 +138,37 @@ function App() {
   const searchFetchProgressTimerRef = useRef(null)
   const searchFinalizeProgressTimerRef = useRef(null)
   const searchSmoothProgressTimerRef = useRef(null)
+  const loopModeRef = useRef(0)
+  const queueRef = useRef([])
+  const queueIndexRef = useRef(0)
+  const currentTrackRef = useRef(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [volume, setVolume] = useState(0.5)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
+  const [loopMode, setLoopMode] = useState(0) // 0: no loop, 1: loop all, 2: loop one
   const [currentTrack, setCurrentTrack] = useState({
     title: 'Select a track',
     artist: '...',
     thumbnail: null,
     audio_url: null
   })
+
+  useEffect(() => {
+    loopModeRef.current = loopMode
+  }, [loopMode])
+
+  useEffect(() => {
+    queueRef.current = queue
+  }, [queue])
+
+  useEffect(() => {
+    queueIndexRef.current = queueIndex
+  }, [queueIndex])
+
+  useEffect(() => {
+    currentTrackRef.current = currentTrack
+  }, [currentTrack])
 
 useEffect(() => {
   if (!user) return;
@@ -487,7 +508,7 @@ useEffect(() => {
 
       stopVisualizer();
     }
-  }, [currentTrack]);
+  }, [currentTrack, loopMode, queue, queueIndex]);
 
   // --- LOGIC: LOCAL PLAY COUNT ---
   const recordPlay = (track) => {
@@ -519,14 +540,51 @@ useEffect(() => {
 
   // --- LOGIC: PLAYER ---
   const handleNextTrack = () => {
-    if (queue.length > queueIndex + 1) {
-      const nextIndex = queueIndex + 1
+    const liveLoopMode = loopModeRef.current
+    const liveQueue = queueRef.current
+    const liveQueueIndex = queueIndexRef.current
+    const liveCurrentTrack = currentTrackRef.current
+
+    // Loop one: restart current track
+    if (liveLoopMode === 2) {
+      const loopTrack = liveQueue[liveQueueIndex] || liveCurrentTrack
+      if (loopTrack && (loopTrack.proxy_url || loopTrack.audio_url || loopTrack.webpage_url)) {
+        playTrack(loopTrack, false)
+      }
+      return
+    }
+
+    // Move to next track
+    if (liveQueue.length > liveQueueIndex + 1) {
+      const nextIndex = liveQueueIndex + 1
       setQueueIndex(nextIndex)
-      playTrack(queue[nextIndex], false)
-    } else {
+      playTrack(liveQueue[nextIndex], false)
+    } 
+    // Loop all: go back to first track
+    else if (liveLoopMode === 1) {
+      if (liveQueue.length > 0) {
+        setQueueIndex(0)
+        playTrack(liveQueue[0], false)
+      } else if (liveCurrentTrack && (liveCurrentTrack.proxy_url || liveCurrentTrack.audio_url || liveCurrentTrack.webpage_url)) {
+        playTrack(liveCurrentTrack, false)
+      } else {
+        setIsPlaying(false)
+        stopVisualizer()
+      }
+    }
+    // No loop: stop
+    else {
       setIsPlaying(false)
       stopVisualizer()
     }
+  }
+
+  const cycleLoopMode = () => {
+    setLoopMode((prev) => {
+      const next = (prev + 1) % 3
+      loopModeRef.current = next
+      return next
+    })
   }
 
   const handlePrevTrack = () => {
@@ -669,6 +727,18 @@ useEffect(() => {
     setQueue(newQueue)
   }
 
+  const playFromSearchResults = (track, index) => {
+    const safeIndex = Math.max(0, index || 0)
+    const nextQueue = searchResults.slice(safeIndex)
+
+    if (nextQueue.length > 0) {
+      setQueue(nextQueue)
+      setQueueIndex(0)
+    }
+
+    playTrack(track, true)
+  }
+
   const playFromQueue = (index) => {
     setQueueIndex(index)
     playTrack(queue[index], true)
@@ -757,6 +827,23 @@ useEffect(() => {
       }
     } catch {
       localStorage.removeItem('pendingTrack')
+    }
+  }, [])
+
+  useEffect(() => {
+    const searchPlaylistRaw = localStorage.getItem('searchPlaylist')
+    if (!searchPlaylistRaw) return
+
+    try {
+      const searchTracks = JSON.parse(searchPlaylistRaw)
+      if (Array.isArray(searchTracks) && searchTracks.length > 0) {
+        setQueue(searchTracks)
+        setQueueIndex(0)
+        localStorage.removeItem('searchPlaylist')
+        localStorage.removeItem('searchPlaylistIndex')
+      }
+    } catch {
+      localStorage.removeItem('searchPlaylist')
     }
   }, [])
 
@@ -1401,7 +1488,7 @@ useEffect(() => {
                         {result.thumbnail ? (
                           <button
                             type="button"
-                            onClick={() => playTrack(result)}
+                            onClick={() => playFromSearchResults(result, index)}
                             className="group relative h-24 w-24 shrink-0 overflow-hidden rounded-2xl shadow-[0_10px_30px_rgba(236,72,153,0.25)]"
                             aria-label={`Play ${result.title || 'track'}`}
                           >
@@ -1413,7 +1500,7 @@ useEffect(() => {
                         ) : (
                           <button
                             type="button"
-                            onClick={() => playTrack(result)}
+                            onClick={() => playFromSearchResults(result, index)}
                             className="group relative h-24 w-24 shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-pink-500 to-rose-500"
                             aria-label={`Play ${result.title || 'track'}`}
                           >
@@ -1430,7 +1517,7 @@ useEffect(() => {
 
                         <div className="absolute right-0 top-0 bottom-0 flex w-14 flex-col border-l border-white/10 bg-white/[0.03] md:w-20 xl:w-24">
                           <button
-                            onClick={() => playTrack(result)}
+                            onClick={() => playFromSearchResults(result, index)}
                             className="flex flex-1 items-center justify-center gap-1.5 border-b border-white/10 text-[10px] font-semibold text-[#00ff99] transition hover:bg-white/10 md:gap-2"
                           >
                             <FaPlay size={11} />
@@ -1767,6 +1854,24 @@ useEffect(() => {
               </div>
 
               <div className="hidden items-center gap-3 w-1/4 justify-end sm:flex">
+                <button
+                  onClick={cycleLoopMode}
+                  title={loopMode === 0 ? "Loop off" : loopMode === 1 ? "Loop all" : "Loop one"}
+                  className={`transition ${
+                    loopMode === 0 ? 'text-[color:var(--muted)] hover:text-white' : 'text-pink-500'
+                  }`}
+                >
+                  {loopMode === 2 ? (
+                    <div className="relative">
+                      <FaRedo style={iconStyle} />
+                      <span className="absolute top-0 right-0 text-[10px] font-bold">1</span>
+                    </div>
+                  ) : loopMode === 1 ? (
+                    <FaRetweet style={iconStyle} />
+                  ) : (
+                    <FaBan style={iconStyle} />
+                  )}
+                </button>
                 <FaVolumeUp className="text-[color:var(--muted)]" />
                 <input
                   type="range"

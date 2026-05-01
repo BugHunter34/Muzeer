@@ -11,7 +11,7 @@ export default function SearchResults() {
 
   const [query, setQuery] = useState(initialQuery);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
+  const [results, setResults] = useState([]);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -20,12 +20,12 @@ export default function SearchResults() {
 
   useEffect(() => {
     if (!initialQuery.trim()) {
-      setResult(null);
+      setResults([]);
       setError('');
       return;
     }
 
-    const fetchResult = async () => {
+    const fetchResults = async () => {
       setLoading(true);
       setError('');
       try {
@@ -40,16 +40,17 @@ export default function SearchResults() {
           throw new Error(data.error || 'Search failed');
         }
 
-        setResult(data);
+        const resultsArray = Array.isArray(data) ? data : Array.isArray(data?.results) ? data.results : [data];
+        setResults(resultsArray.filter(r => r && r.title));
       } catch (err) {
-        setResult(null);
+        setResults([]);
         setError(err.message || 'Search failed');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchResult();
+    fetchResults();
   }, [initialQuery]);
 
   const handleSubmit = (e) => {
@@ -60,26 +61,41 @@ export default function SearchResults() {
   };
 
   const addToQueue = () => {
-    if (!result) return;
+    if (!results.length) return;
     const currentQueue = JSON.parse(localStorage.getItem('queue') || '[]');
-    const newQueue = [...currentQueue, result];
+    const newQueue = [...currentQueue, ...results];
     localStorage.setItem('queue', JSON.stringify(newQueue));
-    alert('Added to local queue.');
+    alert(`Added ${results.length} tracks to queue`);
   };
 
-  const playInMuzeer = () => {
-    if (!result) return;
-    localStorage.setItem('pendingTrack', JSON.stringify(result));
+  const playAllResults = () => {
+    if (!results.length) return;
+    localStorage.setItem('searchPlaylist', JSON.stringify(results));
+    localStorage.setItem('searchPlaylistIndex', '0');
+    localStorage.setItem('pendingTrack', JSON.stringify(results[0]));
+    navigate('/');
+  };
+
+  const playTrack = (track) => {
+    localStorage.setItem('pendingTrack', JSON.stringify(track));
+    const trackIndex = results.indexOf(track);
+    if (trackIndex !== -1) {
+      const remainingTracks = results.slice(trackIndex);
+      localStorage.setItem('searchPlaylist', JSON.stringify(remainingTracks));
+      localStorage.setItem('searchPlaylistIndex', '0');
+    }
     navigate('/');
   };
 
   return (
-    <div className="min-h-screen w-full bg-[radial-gradient(circle_at_8%_18%,rgba(48,214,197,0.18),transparent_42%),radial-gradient(circle_at_78%_15%,rgba(255,180,84,0.16),transparent_46%),radial-gradient(circle_at_55%_85%,rgba(22,67,87,0.35),transparent_55%),#06080c] text-white">
+    <div className="min-h-screen w-full bg-[radial-gradient(circle_at_8%_18%,rgba(48,214,197,0.18),transparent_42%),radial-gradient(circle_at_78%_15%,rgba(255,180,84,0.16),transparent_46%),radial-gradient(circle_at_55%_85%,rgba(22,67,87,0.35),transparent_55%),#06080c] text-white pb-24">
       <div className="mx-auto w-full max-w-[1200px] px-4 py-8 sm:px-6">
         <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-xs uppercase tracking-[0.35em] text-white/45">Search</p>
-            <h1 className="mt-1 text-3xl font-semibold">Search Results</h1>
+            <p className="text-xs uppercase tracking-[0.35em] text-white/45">Search for Music</p>
+            <h1 className="mt-1 text-3xl font-semibold">
+              {initialQuery ? `Results for "${initialQuery}"` : 'Search Results'}
+            </h1>
           </div>
           <button
             onClick={() => navigate('/')}
@@ -124,39 +140,76 @@ export default function SearchResults() {
           </div>
         )}
 
-        {result && !loading && (
-          <section className="rounded-3xl border border-pink-500/20 bg-gradient-to-br from-pink-500/10 via-purple-900/10 to-transparent p-5 sm:p-6">
-            <div className="flex flex-col gap-6 md:flex-row md:items-center">
-              {result.thumbnail ? (
-                <img src={result.thumbnail} alt="Thumbnail" className="h-40 w-40 rounded-3xl object-cover shadow-[0_10px_40px_rgba(236,72,153,0.3)]" />
-              ) : (
-                <div className="h-40 w-40 rounded-3xl bg-gradient-to-br from-pink-500 to-rose-500" />
-              )}
-
-              <div className="flex-1">
-                <div className="mb-2 flex items-center gap-2">
-                  <span className="rounded bg-pink-500/20 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-pink-300">Top Result</span>
-                </div>
-                <h2 className="text-2xl font-bold">{result.title}</h2>
-                <p className="mb-4 mt-1 text-sm text-white/60">{result.artist}</p>
-
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    onClick={playInMuzeer}
-                    className="inline-flex items-center gap-2 rounded-full bg-[#00ff00] px-6 py-2.5 text-sm font-bold text-black transition hover:scale-105 hover:bg-[#00cc00]"
-                  >
-                    <FaPlay /> Play in Muzeer
-                  </button>
-                  <button
-                    onClick={addToQueue}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-white/10"
-                  >
-                    <MdQueueMusic /> Queue
-                  </button>
-                </div>
+        {results.length > 0 && !loading && (
+          <section className="space-y-4">
+            <div className="rounded-3xl border border-pink-500/20 bg-gradient-to-br from-pink-500/10 via-purple-900/10 to-transparent p-6">
+              <h2 className="text-2xl font-bold mb-4">Search Playlist ({results.length} tracks)</h2>
+              
+              <div className="flex flex-wrap gap-3 mb-6">
+                <button
+                  onClick={playAllResults}
+                  className="inline-flex items-center gap-2 rounded-full bg-[#00ff00] px-6 py-3 text-sm font-bold text-black transition hover:scale-105 hover:bg-[#00cc00]"
+                >
+                  <FaPlay /> Play All
+                </button>
+                <button
+                  onClick={addToQueue}
+                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm font-medium text-white transition hover:bg-white/10"
+                >
+                  <MdQueueMusic /> Queue All
+                </button>
               </div>
             </div>
+
+            <div className="space-y-2">
+              {results.map((track, index) => (
+                <div
+                  key={index}
+                  className="rounded-2xl border border-white/10 bg-white/5 p-4 hover:bg-white/10 transition flex items-center justify-between group"
+                >
+                  <div className="flex items-center gap-4 flex-1 min-w-0">
+                    <span className="text-white/40 font-semibold min-w-[2rem]">#{index + 1}</span>
+                    
+                    {track.thumbnail ? (
+                      <div className="h-14 w-14 rounded-lg overflow-hidden flex-shrink-0">
+                        <img src={track.thumbnail} alt="" className="h-full w-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className="h-14 w-14 rounded-lg bg-gradient-to-br from-pink-500 to-rose-500 flex items-center justify-center flex-shrink-0">
+                        <MdQueueMusic className="text-white/50" />
+                      </div>
+                    )}
+                    
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold truncate">{track.title}</p>
+                      <p className="text-sm text-white/60 truncate">{track.artist}</p>
+                      {track.duration && (
+                        <p className="text-xs text-white/40 mt-1">
+                          {Math.floor(track.duration / 60)}:{(track.duration % 60).toString().padStart(2, '0')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => playTrack(track)}
+                      className="rounded-full bg-pink-500 p-2.5 text-white transition hover:bg-pink-600 opacity-0 group-hover:opacity-100 transform scale-0 group-hover:scale-100"
+                      title="Play this track"
+                    >
+                      <FaPlay size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </section>
+        )}
+
+        {!loading && results.length === 0 && initialQuery && (
+          <div className="rounded-3xl border border-dashed border-white/15 bg-white/5 p-10 text-center text-white/45">
+            No results found for "{initialQuery}"
+          </div>
         )}
       </div>
     </div>

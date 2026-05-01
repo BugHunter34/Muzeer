@@ -19,6 +19,7 @@
   --speaker-glow: #3bf0d1;
   --grid-line: rgba(62, 214, 200, 0.12);
   --grid-line-strong: rgba(255, 196, 110, 0.16);
+  --deploy-rev: 20260501;
 }
 
 * {
