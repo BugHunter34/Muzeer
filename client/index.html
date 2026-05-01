@@ -13,7 +13,382 @@
     <title>muzeer</title>
   </head>
   <body>
+    <div id="tv-boot-fallback" style="position:fixed;inset:0;z-index:99999;background:#06080c;color:#eaf3ff;font-family:Segoe UI,Tahoma,sans-serif;padding:18px;display:block;">
+      <div style="max-width:900px;margin:0 auto;border:1px solid #2b3a4d;border-radius:10px;padding:14px;background:#0e1620;">
+        <div style="font-size:22px;font-weight:700;margin-bottom:8px;">Muzeer Boot Fallback</div>
+        <div id="tv-boot-line" style="font-size:15px;color:#bfd2e8;">Initializing page...</div>
+        <div style="margin-top:12px;font-size:13px;color:#9db0c6;">If this message stays forever, JS bundle did not mount in this browser.</div>
+      </div>
+    </div>
     <div id="root"></div>
+    <script>
+      (function () {
+        var line = document.getElementById('tv-boot-line');
+        if (line) line.textContent = 'HTML loaded. Waiting for app bundle...';
+
+        window.addEventListener('error', function (event) {
+          var msg = event && event.message ? event.message : 'Unknown startup error';
+          var out = document.getElementById('tv-boot-line');
+          if (out) out.textContent = 'Startup error: ' + msg;
+        });
+
+        window.addEventListener('unhandledrejection', function (event) {
+          var reason = event && event.reason ? String(event.reason) : 'Unknown promise rejection';
+          var out = document.getElementById('tv-boot-line');
+          if (out) out.textContent = 'Promise error: ' + reason;
+        });
+
+        function getQueryParam(name) {
+          var query = window.location.search || '';
+          var match = query.match(new RegExp('(?:[?&])' + name + '=([^&]*)'));
+          return match ? decodeURIComponent(match[1].replace(/\+/g, ' ')) : '';
+        }
+
+        function renderSafeMode() {
+          var boot = document.getElementById('tv-boot-fallback');
+          var root = document.getElementById('root');
+          if (!boot || !root) return;
+
+          var initialQ = getQueryParam('q') || '';
+          boot.style.display = 'none';
+
+          root.innerHTML = [
+            '<div style="min-height:100vh;background:#06080c;color:#eaf3ff;font-family:Segoe UI,Tahoma,sans-serif;padding:16px;">',
+            '<div style="max-width:980px;margin:0 auto;">',
+            '<h1 style="margin:0 0 10px 0;font-size:30px;">Muzeer SAFE MODE</h1>',
+            '<div style="font-size:13px;color:#9eb1c8;margin-bottom:12px;">React bundle did not mount. Running compatibility mode.</div>',
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">',
+            '<input id="safe-q" value="' + (initialQ || '').replace(/"/g, '&quot;') + '" placeholder="Search song" style="flex:1 1 260px;min-width:220px;padding:12px;border-radius:8px;border:1px solid #2f4057;background:#0e1620;color:#fff;"/>',
+            '<button id="safe-search" style="padding:12px 16px;border-radius:8px;border:1px solid #405673;background:#162231;color:#fff;">Search</button>',
+            '</div>',
+            '<div id="safe-status" style="font-size:13px;color:#9eb1c8;margin-bottom:8px;">Ready.</div>',
+            '<div style="border:1px solid #2b3a4d;border-radius:10px;background:#0e1620;padding:10px;margin-bottom:10px;">',
+            '<div id="safe-now" style="font-size:14px;color:#d7e6f7;margin-bottom:8px;">Now playing: none</div>',
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">',
+            '<button id="safe-prev" style="padding:8px 12px;border-radius:8px;border:1px solid #405673;background:#162231;color:#fff;">Prev</button>',
+            '<button id="safe-toggle" style="padding:8px 12px;border-radius:8px;border:1px solid #405673;background:#162231;color:#fff;">Play/Pause</button>',
+            '<button id="safe-next" style="padding:8px 12px;border-radius:8px;border:1px solid #405673;background:#162231;color:#fff;">Next</button>',
+            '</div>',
+            '<audio id="safe-audio" controls style="width:100%;height:36px;"></audio>',
+            '<div id="safe-yt-wrap" style="display:none;margin-top:8px;">',
+            '<div style="font-size:12px;color:#9eb1c8;margin-bottom:6px;">Fallback player (YouTube embed)</div>',
+            '<iframe id="safe-yt-frame" title="safe-yt" src="about:blank" allow="autoplay; encrypted-media" style="width:100%;height:240px;border:1px solid #2f4057;border-radius:8px;background:#000;"></iframe>',
+            '</div>',
+            '</div>',
+            '<div id="safe-results" style="border:1px solid #2b3a4d;border-radius:10px;background:#0e1620;padding:10px;"></div>',
+            '</div>',
+            '</div>'
+          ].join('');
+
+          var safeItems = [];
+          var currentIndex = -1;
+          var currentTrack = null;
+          var audioEl = document.getElementById('safe-audio');
+          var ytWrap = document.getElementById('safe-yt-wrap');
+          var ytFrame = document.getElementById('safe-yt-frame');
+
+          function setStatus(text) {
+            var el = document.getElementById('safe-status');
+            if (el) el.innerHTML = text;
+          }
+
+          function esc(text) {
+            return String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          }
+
+          function setNowPlaying(text) {
+            var el = document.getElementById('safe-now');
+            if (el) el.innerHTML = 'Now playing: ' + esc(text || 'none');
+          }
+
+          function getPlayableUrl(track) {
+            if (!track) return '';
+            return track.proxy_url || track.audio_url || track.stream_url || track.url || '';
+          }
+
+          function getVideoId(track) {
+            if (!track) return '';
+            var source = String(track.webpage_url || track.audio_url || '');
+            var m = source.match(/[?&]v=([a-zA-Z0-9_-]{6,})/);
+            if (m && m[1]) return m[1];
+            var m2 = source.match(/youtu\.be\/([a-zA-Z0-9_-]{6,})/);
+            if (m2 && m2[1]) return m2[1];
+            return '';
+          }
+
+          function showNativeAudio() {
+            if (audioEl) audioEl.style.display = 'block';
+            if (ytWrap) ytWrap.style.display = 'none';
+          }
+
+          function playViaYouTubeEmbed(track, reason) {
+            var vid = getVideoId(track);
+            if (!vid) {
+              setStatus('No YouTube video ID available for fallback player.');
+              return;
+            }
+            if (audioEl) {
+              try { audioEl.pause(); } catch (e) {}
+            }
+            if (ytWrap) ytWrap.style.display = 'block';
+            if (audioEl) audioEl.style.display = 'none';
+            if (ytFrame) {
+              ytFrame.src = 'https://www.youtube.com/embed/' + vid + '?autoplay=1&playsinline=1&rel=0';
+            }
+            setStatus('Using YouTube fallback player' + (reason ? ' (' + reason + ')' : '') + '.');
+          }
+
+          function bindPlayButtons() {
+            var target = document.getElementById('safe-results');
+            if (!target) return;
+            var buttons = target.getElementsByClassName('safe-play-btn');
+            for (var i = 0; i < buttons.length; i++) {
+              buttons[i].onclick = function () {
+                var idx = parseInt(this.getAttribute('data-i'), 10);
+                if (!isNaN(idx)) playIndex(idx);
+              };
+            }
+          }
+
+          function setAudioSourceAndPlay(url, label) {
+            if (!audioEl || !url) {
+              setStatus('No playable URL for this track.');
+              return;
+            }
+            showNativeAudio();
+            audioEl.src = url;
+            setNowPlaying(label);
+            setStatus('Playing: ' + esc(label));
+            try { audioEl.play(); } catch (e) {}
+          }
+
+          function resolvePlayableAndPlay(index) {
+            var track = safeItems[index];
+            if (!track) return;
+            currentTrack = track;
+
+            var label = (track.title || 'Untitled') + ' - ' + (track.artist || 'Unknown');
+            var direct = getPlayableUrl(track);
+            var canWebm = true;
+            if (audioEl && typeof audioEl.canPlayType === 'function') {
+              var support = audioEl.canPlayType('audio/webm; codecs="opus"');
+              canWebm = Boolean(support);
+            }
+
+            if (!canWebm && getVideoId(track)) {
+              setNowPlaying(label);
+              playViaYouTubeEmbed(track, 'webm not supported');
+              return;
+            }
+
+            if (direct) {
+              setAudioSourceAndPlay(direct, label);
+              return;
+            }
+
+            if (!track.webpage_url) {
+              setStatus('Track has no webpage_url or audio URL.');
+              return;
+            }
+
+            setStatus('Resolving stream URL...');
+            var xhr2 = new XMLHttpRequest();
+            xhr2.open('POST', 'https://media.muzeer.com/api/search', true);
+            xhr2.setRequestHeader('Content-Type', 'application/json');
+            xhr2.onreadystatechange = function () {
+              if (xhr2.readyState !== 4) return;
+              if (xhr2.status < 200 || xhr2.status >= 300) {
+                setStatus('Stream resolve failed. HTTP ' + xhr2.status + '.');
+                return;
+              }
+              try {
+                var raw2 = JSON.parse(xhr2.responseText);
+                var streamTrack = raw2;
+                if (Object.prototype.toString.call(raw2) === '[object Array]' && raw2.length) {
+                  streamTrack = raw2[0];
+                } else if (raw2 && Object.prototype.toString.call(raw2.results) === '[object Array]' && raw2.results.length) {
+                  streamTrack = raw2.results[0];
+                }
+                var resolvedUrl = getPlayableUrl(streamTrack);
+                if (!resolvedUrl) {
+                  setStatus('Resolved response but no stream URL.');
+                  return;
+                }
+                safeItems[index] = streamTrack;
+                setAudioSourceAndPlay(resolvedUrl, label);
+              } catch (e) {
+                setStatus('Stream resolve parse error.');
+              }
+            };
+            xhr2.send(JSON.stringify({ query: track.webpage_url }));
+          }
+
+          function playIndex(index) {
+            if (!safeItems.length) return;
+            if (index < 0) index = 0;
+            if (index >= safeItems.length) index = safeItems.length - 1;
+            currentIndex = index;
+            resolvePlayableAndPlay(currentIndex);
+          }
+
+          function renderResults(items) {
+            var target = document.getElementById('safe-results');
+            if (!target) return;
+            safeItems = items || [];
+            if (!items || !items.length) {
+              target.innerHTML = '<div style="color:#9eb1c8;">No results.</div>';
+              currentIndex = -1;
+              setNowPlaying('none');
+              return;
+            }
+
+            var html = '';
+            for (var i = 0; i < items.length; i++) {
+              var it = items[i] || {};
+              var title = esc(it.title || 'Untitled');
+              var artist = esc(it.artist || 'Unknown');
+              var href = (it.webpage_url || '#').replace(/"/g, '&quot;');
+              html += '<div style="padding:10px 0;border-top:' + (i ? '1px solid #223247' : '0') + ';">';
+              html += '<div style="font-size:12px;color:#8ea3bc;">#' + (i + 1) + '</div>';
+              html += '<div style="font-size:16px;font-weight:700;">' + title + '</div>';
+              html += '<div style="font-size:13px;color:#b7c7d9;">' + artist + '</div>';
+              html += '<button class="safe-play-btn" data-i="' + i + '" style="margin-top:6px;padding:6px 10px;border-radius:8px;border:1px solid #405673;background:#162231;color:#fff;">Play</button>';
+              if (href !== '#') {
+                html += '<a href="' + href + '" target="_blank" rel="noopener" style="display:inline-block;margin-top:5px;color:#95d0ff;">Open source</a>';
+              }
+              html += '</div>';
+            }
+            target.innerHTML = html;
+            bindPlayButtons();
+          }
+
+          function searchNow() {
+            var qEl = document.getElementById('safe-q');
+            var q = qEl ? qEl.value : '';
+            q = q ? q.replace(/^\s+|\s+$/g, '') : '';
+            if (!q) {
+              setStatus('Type a query first.');
+              renderResults([]);
+              return;
+            }
+
+            setStatus('Searching for "' + q.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '" ...');
+
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', 'https://media.muzeer.com/api/search', true);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.onreadystatechange = function () {
+              if (xhr.readyState !== 4) return;
+              if (xhr.status < 200 || xhr.status >= 300) {
+                setStatus('Search failed. HTTP ' + xhr.status + '.');
+                renderResults([]);
+                return;
+              }
+
+              try {
+                var raw = JSON.parse(xhr.responseText);
+                var items = Object.prototype.toString.call(raw) === '[object Array]'
+                  ? raw
+                  : (raw && Object.prototype.toString.call(raw.results) === '[object Array]' ? raw.results : []);
+                setStatus('Found ' + items.length + ' result(s).');
+                renderResults(items);
+                if (items.length) {
+                  currentIndex = 0;
+                  setNowPlaying((items[0].title || 'Untitled') + ' - ' + (items[0].artist || 'Unknown'));
+                }
+              } catch (e) {
+                setStatus('Search parse error.');
+                renderResults([]);
+              }
+            };
+
+            xhr.send(JSON.stringify({ query: q }));
+          }
+
+          var btn = document.getElementById('safe-search');
+          if (btn) btn.onclick = searchNow;
+
+          var input = document.getElementById('safe-q');
+          if (input) {
+            input.onkeydown = function (e) {
+              var key = e && (e.key || e.keyCode);
+              if (key === 'Enter' || key === 13) searchNow();
+            };
+          }
+
+          var prevBtn = document.getElementById('safe-prev');
+          if (prevBtn) {
+            prevBtn.onclick = function () {
+              if (!safeItems.length) return;
+              var nextIndex = currentIndex <= 0 ? safeItems.length - 1 : currentIndex - 1;
+              playIndex(nextIndex);
+            };
+          }
+
+          var nextBtn = document.getElementById('safe-next');
+          if (nextBtn) {
+            nextBtn.onclick = function () {
+              if (!safeItems.length) return;
+              var nextIndex = currentIndex >= safeItems.length - 1 ? 0 : currentIndex + 1;
+              playIndex(nextIndex);
+            };
+          }
+
+          var toggleBtn = document.getElementById('safe-toggle');
+          if (toggleBtn && audioEl) {
+            toggleBtn.onclick = function () {
+              if (ytWrap && ytWrap.style.display !== 'none') {
+                if (currentTrack) {
+                  playViaYouTubeEmbed(currentTrack);
+                }
+                return;
+              }
+              if (!audioEl.src && safeItems.length) {
+                playIndex(currentIndex >= 0 ? currentIndex : 0);
+                return;
+              }
+              if (audioEl.paused) {
+                try { audioEl.play(); } catch (e) {}
+              } else {
+                audioEl.pause();
+              }
+            };
+          }
+
+          if (audioEl) {
+            audioEl.onended = function () {
+              if (!safeItems.length) return;
+              var nextIndex = currentIndex >= safeItems.length - 1 ? 0 : currentIndex + 1;
+              playIndex(nextIndex);
+            };
+            audioEl.onerror = function () {
+              var code = audioEl.error ? audioEl.error.code : 0;
+              var reason = 'unknown';
+              if (code === 1) reason = 'aborted';
+              else if (code === 2) reason = 'network';
+              else if (code === 3) reason = 'decode';
+              else if (code === 4) reason = 'src not supported';
+
+              if (currentTrack && getVideoId(currentTrack)) {
+                playViaYouTubeEmbed(currentTrack, reason);
+                return;
+              }
+              setStatus('Audio playback failed (' + reason + ').');
+            };
+          }
+
+          if (initialQ) searchNow();
+        }
+
+        window.setTimeout(function () {
+          if (!window.__MUZEER_MOUNTED__) {
+            var out = document.getElementById('tv-boot-line');
+            if (out) out.textContent = 'JS bundle did not mount on this browser. Starting SAFE MODE...';
+            renderSafeMode();
+          }
+        }, 2500);
+      })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

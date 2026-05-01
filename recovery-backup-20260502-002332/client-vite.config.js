@@ -8,11 +8,11 @@ export default defineConfig({
     tailwindcss(),
     react(),
     legacy({
-      targets: ['defaults', 'not IE 11', 'chrome >= 64', 'safari >= 12'],
-      modernTargets: ['chrome >= 61', 'safari >= 11'],
+      targets: ['defaults', 'not IE 11', 'chrome >= 49', 'safari >= 10'],
       renderLegacyChunks: true,
       modernPolyfills: true,
-    }),
+      additionalLegacyPolyfills: ['regenerator-runtime/runtime']
+    })
   ],
   server: {
     host: '0.0.0.0',

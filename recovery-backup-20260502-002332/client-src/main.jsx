@@ -8,30 +8,17 @@ import Profile from './Profile/Profile.jsx'
 import SearchResults from './Search/SearchResults.jsx'
 import AdminAbuse from './Admin/AdminAbuse.jsx' // NEW: Admin dashboard
 const BUILD_STAMP = '2026-05-01-2030';
-
-const hideBootFallback = () => {
-  const boot = document.getElementById('tv-boot-fallback');
-  if (boot) {
-    boot.style.display = 'none';
-  }
-};
-
-window.__MUZEER_MOUNTED__ = true;
-hideBootFallback();
-
-const storageGet = (key) => {
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-};
 // Remove index.css import here if it's breaking things
 // --- Grab User info from localStorage so we can conditionally render admin routes ---
 let user = null;
-const isBanned = storageGet('banned') === 'true';
+let isBanned = false;
 try {
-  const savedUser = storageGet('user');
+  isBanned = localStorage.getItem('banned') === 'true';
+} catch {
+  isBanned = false;
+}
+try {
+  const savedUser = localStorage.getItem('user');
   if (savedUser && savedUser !== "undefined") {
     user = JSON.parse(savedUser);
   }
@@ -42,7 +29,6 @@ const canAccessAdmin = user?.role === 'admin' || user?.role === 'owner';
 console.log("MAIN.JSX BOOTING UP! USER IS:", user, 'BUILD:', BUILD_STAMP);
 
 if (isBanned) {
-  hideBootFallback();
   // TERMINATION SCREEN
   ReactDOM.createRoot(document.getElementById('root')).render(
     <div style={{ display: 'flex', height: '100vh', width: '100vw', background: '#020005', color: '#ff2a2a', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', fontFamily: 'monospace' }}>
@@ -68,6 +54,4 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     </BrowserRouter>
   </React.StrictMode>,
 )
-
-hideBootFallback();
 }

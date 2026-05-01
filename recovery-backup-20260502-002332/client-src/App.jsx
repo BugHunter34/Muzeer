@@ -46,30 +46,6 @@ const detectLowPowerDevice = () => {
   return lowCpu || lowMemory || saveData || reducedMotion
 }
 
-const storageGet = (key) => {
-  try {
-    return window.localStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
-
-const storageSet = (key, value) => {
-  try {
-    window.localStorage.setItem(key, value)
-  } catch {
-    // ignore blocked storage in restrictive TV webviews
-  }
-}
-
-const storageRemove = (key) => {
-  try {
-    window.localStorage.removeItem(key)
-  } catch {
-    // ignore blocked storage in restrictive TV webviews
-  }
-}
-
 const DEFAULT_PLAYLISTS = [
   { id: 'daily-mix-1', name: 'Daily Mix 1', tracks: [] },
   { id: 'chill-focus', name: 'Chill Focus', tracks: [] }
@@ -85,12 +61,8 @@ function App() {
   // ✅ 1) Sync user (localStorage + event userUpdated + storage)
   useEffect(() => {
     const syncUser = () => {
-      try {
-        const savedUser = storageGet('user');
-        setUser(savedUser ? JSON.parse(savedUser) : null);
-      } catch {
-        setUser(null);
-      }
+      const savedUser = localStorage.getItem('user');
+      setUser(savedUser ? JSON.parse(savedUser) : null);
     };
 
     syncUser();
@@ -135,7 +107,7 @@ function App() {
   const [intensity, setIntensity] = useState(1)
   const [potatoMode, setPotatoMode] = useState(() => {
     if (typeof window === 'undefined') return false
-    const saved = storageGet('muzeer-potato-mode')
+    const saved = window.localStorage.getItem('muzeer-potato-mode')
     if (saved === '1') return true
     if (saved === '0') return false
     return detectLowPowerDevice()
@@ -210,8 +182,8 @@ useEffect(() => {
 
       // 401: Token Expired, Missing, or User Deleted
       if (res.status === 401) {
-        storageRemove('user');
-        storageRemove('token');
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
         window.dispatchEvent(new Event("userUpdated"));
         // Optional: redirect to login
       } 
@@ -220,9 +192,9 @@ useEffect(() => {
       else if (res.status === 403) {
         const data = await res.json();
         if (data.isBanned) {
-          storageSet('banned', 'true');
-          storageRemove('user');
-          storageRemove('token');
+          localStorage.setItem('banned', 'true');
+          localStorage.removeItem('user');
+          localStorage.removeItem('token');
           window.dispatchEvent(new Event("userUpdated"));
           window.location.href = '/'; // Kick them out to the homepage/ban screen
         }
@@ -424,7 +396,7 @@ useEffect(() => {
 
   useEffect(() => {
     try {
-      const raw = storageGet('muzeer-playlists')
+      const raw = window.localStorage.getItem('muzeer-playlists')
       const parsed = raw ? JSON.parse(raw) : null
       if (!Array.isArray(parsed) || parsed.length === 0) return
 
@@ -446,7 +418,7 @@ useEffect(() => {
   }, [])
 
   useEffect(() => {
-    storageSet('muzeer-playlists', JSON.stringify(playlists))
+    window.localStorage.setItem('muzeer-playlists', JSON.stringify(playlists))
   }, [playlists])
 
   useEffect(() => {
@@ -540,7 +512,7 @@ useEffect(() => {
 
   // --- LOGIC: LOCAL PLAY COUNT ---
   const recordPlay = (track) => {
-    const history = JSON.parse(storageGet('playHistory') || '[]')
+    const history = JSON.parse(localStorage.getItem('playHistory') || '[]')
     const existingIndex = history.findIndex(item => item.title === track.title)
 
     if (existingIndex > -1) {
@@ -556,12 +528,12 @@ useEffect(() => {
         lastPlayed: new Date()
       })
     }
-    storageSet('playHistory', JSON.stringify(history))
+    localStorage.setItem('playHistory', JSON.stringify(history))
     loadQuickPicks()
   }
 
   const loadQuickPicks = () => {
-    const history = JSON.parse(storageGet('playHistory') || '[]')
+    const history = JSON.parse(localStorage.getItem('playHistory') || '[]')
     const sorted = history.sort((a, b) => b.count - a.count).slice(0, 6)
     setQuickPicks(sorted)
   }
@@ -700,7 +672,7 @@ useEffect(() => {
   }
 
   useEffect(() => {
-    storageSet('muzeer-potato-mode', potatoMode ? '1' : '0')
+    window.localStorage.setItem('muzeer-potato-mode', potatoMode ? '1' : '0')
     if (potatoMode) {
       stopVisualizer()
     }
@@ -840,26 +812,26 @@ useEffect(() => {
   }, [avatarSrc])
 
   useEffect(() => {
-    const pendingTrackRaw = storageGet('pendingTrack')
+    const pendingTrackRaw = localStorage.getItem('pendingTrack')
     if (!pendingTrackRaw) return
 
     try {
       const pendingTrack = JSON.parse(pendingTrackRaw)
       if (pendingTrack) {
         playTrack(pendingTrack).then((played) => {
-          storageRemove('pendingTrack')
+          localStorage.removeItem('pendingTrack')
           if (!played) {
             // autoplay blocked – ok
           }
         })
       }
     } catch {
-      storageRemove('pendingTrack')
+      localStorage.removeItem('pendingTrack')
     }
   }, [])
 
   useEffect(() => {
-    const searchPlaylistRaw = storageGet('searchPlaylist')
+    const searchPlaylistRaw = localStorage.getItem('searchPlaylist')
     if (!searchPlaylistRaw) return
 
     try {
@@ -867,18 +839,18 @@ useEffect(() => {
       if (Array.isArray(searchTracks) && searchTracks.length > 0) {
         setQueue(searchTracks)
         setQueueIndex(0)
-        storageRemove('searchPlaylist')
-        storageRemove('searchPlaylistIndex')
+        localStorage.removeItem('searchPlaylist')
+        localStorage.removeItem('searchPlaylistIndex')
       }
     } catch {
-      storageRemove('searchPlaylist')
+      localStorage.removeItem('searchPlaylist')
     }
   }, [])
 
   const handleAuthMock = () => {
     if (user) {
-      storageRemove('token');
-      storageRemove('user');
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
       window.dispatchEvent(new Event("userUpdated"));
       setUser(null);
     } else {
@@ -888,8 +860,8 @@ useEffect(() => {
 
   const handleRegisterMock = () => {
     if (user) {
-      storageRemove('token');
-      storageRemove('user');
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
       window.dispatchEvent(new Event("userUpdated"));
       setUser(null);
     } else {
@@ -1218,7 +1190,7 @@ useEffect(() => {
 
       <div className="app-content">
         {/* --- NAVBAR --- */}
-        <nav className="nav-shell sticky top-0 z-50 mx-auto w-full max-w-[1600px] rounded-b-3xl border-b border-white/10 bg-[color:var(--panel)]/95 backdrop-blur-md">
+        <nav className="nav-shell app-nav sticky top-0 z-50 mx-auto w-full max-w-[1600px] rounded-b-3xl border-b border-white/10 bg-[color:var(--panel)]/95 backdrop-blur-md">
           <div className="flex items-center justify-between px-4 py-4 sm:px-5">
             <div className="flex items-center gap-3">
               <div className="brand-mark h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-300 to-amber-400 flex items-center justify-center font-bold text-black">M</div>
@@ -1352,10 +1324,10 @@ useEffect(() => {
         </nav>
 
         {/* Main Grid Layout */}
-        <div className="mx-auto grid w-full max-w-[1600px] grid-cols-1 gap-6 px-4 pt-6 sm:px-5 lg:grid-cols-[320px_1fr_340px] lg:pt-8">
+        <div className="app-main-grid mx-auto grid w-full max-w-[1600px] grid-cols-1 gap-6 px-4 pt-6 sm:px-5 lg:grid-cols-[320px_1fr_340px] lg:pt-8">
 
           {/* --- LEFT SIDEBAR --- */}
-          <aside className="hidden flex-col gap-6 lg:flex max-h-[calc(100vh-var(--player-offset)-96px)] min-h-0">
+          <aside className="app-left-col hidden flex-col gap-6 lg:flex max-h-[calc(100vh-var(--player-offset)-96px)] min-h-0">
             <div className="rounded-3xl border border-white/10 bg-[color:var(--panel)]/80 p-5 backdrop-blur h-full min-h-0 flex flex-col overflow-hidden">
               <nav className="space-y-2 text-sm border-b border-white/10 pb-4">
                 {['Home', 'Search', 'Your Library'].map((item) => (
@@ -1440,7 +1412,7 @@ useEffect(() => {
           </aside>
 
           {/* --- MIDDLE CONTENT --- */}
-          <main className="min-w-0 space-y-6 overflow-y-auto pr-1 custom-scrollbar max-h-[calc(100vh-var(--player-offset)-96px)]">
+          <main className="app-center-col min-w-0 space-y-6 overflow-y-auto pr-1 custom-scrollbar max-h-[calc(100vh-var(--player-offset)-96px)]">
             <header className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
               <div>
                 <p className="text-xs uppercase tracking-[0.4em] text-[color:var(--muted)]">Text</p>
@@ -1708,7 +1680,7 @@ useEffect(() => {
           </main>
 
           {/* --- RIGHT SIDEBAR --- */}
-          <aside className="hidden space-y-6 xl:flex xl:flex-col h-[calc(100vh-var(--player-offset)-96px)] sticky top-24">
+          <aside className="app-right-col hidden space-y-6 xl:flex xl:flex-col h-[calc(100vh-var(--player-offset)-96px)] sticky top-24">
             <TokenCompartment
               tokenWallet={tokenWallet}
               onRefresh={loadTokenWallet}
@@ -1806,7 +1778,7 @@ useEffect(() => {
         </div>
 
         {/* --- BOTTOM PLAYER --- */}
-        <div className="fixed bottom-0 left-0 right-0 z-[100] px-2 pb-3 sm:px-3 sm:pb-4">
+        <div className="app-player-wrap fixed bottom-0 left-0 right-0 z-[100] px-2 pb-3 sm:px-3 sm:pb-4">
           <div className="mx-auto max-w-[1580px] rounded-3xl border border-white/10 bg-[color:var(--panel)]/95 px-4 py-3 backdrop-blur sm:px-5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
 
