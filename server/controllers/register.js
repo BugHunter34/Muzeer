@@ -3,6 +3,8 @@ const bcrypt = require("bcryptjs");
 const crypto = require("crypto"); // Vestavěný modul pro generování bezpečných kódů
 const sendVerifyEmail = require("../utils/verifyemailer"); // Tvůj nový pošťák pro registrace
 
+const trimTrailingSlash = (value) => value.replace(/\/$/, '');
+
 exports.register = async (req, res) => {
     try {
       const { email, password, userName } = req.body;
@@ -42,7 +44,8 @@ exports.register = async (req, res) => {
       await newUser.save();
   
       // 8. NOVÉ: Vytvoř link a odešli email
-      const verifyLink = `http://localhost:3000/api/auth/verify-email/${verifyToken}`;
+      const publicApiUrl = trimTrailingSlash(process.env.PUBLIC_API_URL || 'http://localhost:3000');
+      const verifyLink = `${publicApiUrl}/api/auth/verify-email/${verifyToken}`;
       await sendVerifyEmail(normalizedEmail, userName, verifyLink);
   
       // 9. Success Response

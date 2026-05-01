@@ -10,6 +10,17 @@ var dotenv = require('dotenv');
 const Login = require('./models/login');
 dotenv.config({ path: path.join(__dirname, '.env') });
 
+const parseCsvEnv = (value, fallback) => {
+  const source = value || fallback || '';
+  return source
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+};
+
+const isProduction = process.env.NODE_ENV === 'production';
+const allowedOrigins = parseCsvEnv(process.env.CORS_ALLOWED_ORIGINS, 'http://localhost:5173');
+
 // --- Fix BOM in env keys ---
 Object.keys(process.env).forEach((key) => {
   if (key.charCodeAt(0) === 0xFEFF) {
@@ -28,11 +39,7 @@ var app = express();
 
 const authMiddleware = require('./middleware/auth'); // cookie auth
 
-// --- CORS CONFIGURATION ---
-const allowedOrigins = [
-  'http://localhost:5173',
-  // 'https://evocative-fransisca-bootlessly.ngrok-free.dev'
-];
+app.set('trust proxy', process.env.TRUST_PROXY || 1);
 
 // --- DATABASE CONNECTION ---
 const dnsServers = (process.env.DNS_SERVERS || '1.1.1.1,8.8.8.8')
@@ -110,6 +117,15 @@ const corsOptions = {
   credentials: true,
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
   allowedHeaders: 'Content-Type, Authorization',
+};
+
+app.locals.cookieOptions = {
+  httpOnly: true,
+  secure: isProduction,
+  maxAge: 2 * 60 * 60 * 1000,
+  sameSite: process.env.COOKIE_SAME_SITE || (isProduction ? 'none' : 'lax'),
+  domain: process.env.COOKIE_DOMAIN || undefined,
+  path: '/'
 };
 
 app.use(cors(corsOptions));

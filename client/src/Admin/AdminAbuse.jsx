@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { FaSearch, FaShieldAlt, FaTrash, FaUserShield, FaBan, FaCrown } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../config';
 
 export default function AdminAbuse() {
   const navigate = useNavigate();
@@ -35,7 +36,7 @@ export default function AdminAbuse() {
   // 1. Fetch all users on load
   const fetchUsers = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/admin/users', {
+      const response = await fetch(`${API_BASE_URL}/admin/users`, {
         method: 'GET',
         credentials: 'include'
       });
@@ -53,7 +54,7 @@ export default function AdminAbuse() {
 
   const fetchTokenActions = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/admin/token-actions', {
+      const response = await fetch(`${API_BASE_URL}/admin/token-actions`, {
         method: 'GET',
         credentials: 'include'
       });
@@ -68,7 +69,7 @@ export default function AdminAbuse() {
 
   const fetchTokenControl = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/admin/token-control', {
+      const response = await fetch(`${API_BASE_URL}/admin/token-control`, {
         method: 'GET',
         credentials: 'include'
       });
@@ -115,7 +116,7 @@ export default function AdminAbuse() {
         allowAdminMintBurn: Boolean(tokenControl.allowAdminMintBurn)
       };
 
-      const response = await fetch('http://localhost:3000/api/admin/token-control', {
+      const response = await fetch(`${API_BASE_URL}/admin/token-control`, {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -150,7 +151,7 @@ export default function AdminAbuse() {
     const newRole = currentRole === 'admin' ? 'user' : 'admin';
 
     try {
-      const res = await fetch(`http://localhost:3000/api/admin/users/${userId}/role`, {
+      const res = await fetch(`${API_BASE_URL}/admin/users/${userId}/role`, {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -182,7 +183,7 @@ export default function AdminAbuse() {
     if (!window.confirm(`Are you sure you want to ${action} ${userName}?`)) return;
 
     try {
-      const res = await fetch(`http://localhost:3000/api/admin/users/${userId}/ban`, {
+      const res = await fetch(`${API_BASE_URL}/admin/users/${userId}/ban`, {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -206,7 +207,7 @@ export default function AdminAbuse() {
     if (!window.confirm(`Are you SURE you want to eradicate ${userName}? This cannot be undone.`)) return;
     
     try {
-      const res = await fetch(`http://localhost:3000/api/admin/users/${userId}`, {
+      const res = await fetch(`${API_BASE_URL}/admin/users/${userId}`, {
         method: 'DELETE',
         credentials: 'include'
       });
@@ -248,7 +249,7 @@ export default function AdminAbuse() {
 
     try {
       setTokenUpdatingUserId(userId);
-      const res = await fetch(`http://localhost:3000/api/admin/users/${userId}/token`, {
+      const res = await fetch(`${API_BASE_URL}/admin/users/${userId}/token`, {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -287,7 +288,7 @@ export default function AdminAbuse() {
 
     try {
       setTokenUpdatingUserId(userId);
-      const res = await fetch(`http://localhost:3000/api/admin/users/${userId}/token`, {
+      const res = await fetch(`${API_BASE_URL}/admin/users/${userId}/token`, {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },

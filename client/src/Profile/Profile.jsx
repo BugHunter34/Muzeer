@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { API_BASE_URL, API_ORIGIN, toAbsoluteApiUrl } from "../config";
 
 export default function Profile() {
   const navigate = useNavigate();
-  const serverBase = "http://localhost:3000";
+  const serverBase = API_ORIGIN;
 
   const [me, setMe] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -56,7 +57,7 @@ export default function Profile() {
   const avatarSrc =
     avatarPreview ||
     (me?.avatarUrl
-      ? (me.avatarUrl.startsWith("http") ? me.avatarUrl : `${serverBase}${me.avatarUrl}`)
+      ? (me.avatarUrl.startsWith("http") ? me.avatarUrl : toAbsoluteApiUrl(me.avatarUrl))
       : null);
 
   const setField = (k, v) => setForm((p) => ({ ...p, [k]: v }));
@@ -86,7 +87,7 @@ export default function Profile() {
     const loadMe = async () => {
       setIsLoading(true);
       try {
-        const res = await fetch(`${serverBase}/api/auth/me`, {
+        const res = await fetch(`${API_BASE_URL}/auth/me`, {
           method: "GET",
           credentials: "include",
         });
@@ -124,7 +125,7 @@ export default function Profile() {
 
     try {
       // 1) PATCH profile
-      const patchRes = await fetch(`${serverBase}/api/auth/me`, {
+      const patchRes = await fetch(`${API_BASE_URL}/auth/me`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -150,7 +151,7 @@ export default function Profile() {
         const fd = new FormData();
         fd.append("avatar", avatarFile);
 
-        const upRes = await fetch(`${serverBase}/api/auth/me/avatar`, {
+        const upRes = await fetch(`${API_BASE_URL}/auth/me/avatar`, {
           method: "POST",
           credentials: "include",
           body: fd,

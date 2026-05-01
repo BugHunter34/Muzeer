@@ -8,6 +8,17 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     strictPort: true, // Ensures it doesn't jump to 5174 if 5173 is "busy"
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
+      '/media-api': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/media-api/, '/api')
+      }
+    },
     
     // In Vite 7, if 'all' isn't working, we must be explicit
     allowedHosts: [

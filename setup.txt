@@ -1,0 +1,66 @@
+Cloudflare-ready deployment setup
+
+This repository is now prepared for a production setup where Cloudflare sits in front of your own servers.
+
+Important:
+Cloudflare can proxy this app, but the current backend stack is Express + Flask + MongoDB. That means it is not a Cloudflare Workers-native app. You still need an origin server or VPS for:
+- Node/Express API on port 3000
+- Python media/search service on port 5000
+- MongoDB
+
+Recommended production layout
+- app.example.com -> static frontend build from client/dist
+- api.example.com -> Node/Express server behind Cloudflare proxy
+- media.example.com -> Python search/stream service behind Cloudflare proxy
+
+Required environment files
+- Copy client/.env.example to client/.env.production and set real domains
+- Copy server/.env.example to server/.env and fill in real secrets and database URIs
+
+Client env
+- VITE_API_ORIGIN=https://api.example.com
+- VITE_MEDIA_ORIGIN=https://media.example.com
+
+Server env
+- NODE_ENV=production
+- PORT=3000
+- TRUST_PROXY=1
+- CORS_ALLOWED_ORIGINS=https://app.example.com
+- MEDIA_CORS_ALLOWED_ORIGINS=https://app.example.com
+- PUBLIC_API_URL=https://api.example.com
+- COOKIE_DOMAIN=api.example.com
+- COOKIE_SAME_SITE=none
+- MEDIA_PORT=5000
+- DATABASE=your MongoDB SRV URI
+- DATABASE_DIRECT=optional direct Mongo URI fallback
+- JWT_SECRET=strong random string
+
+Why these settings matter
+- TRUST_PROXY=1 lets Express respect Cloudflare forwarded HTTPS headers
+- COOKIE_SAME_SITE=none plus production secure cookies allows auth cookies over HTTPS cross-origin requests
+- PUBLIC_API_URL is used in email verification links
+- CORS_ALLOWED_ORIGINS and MEDIA_CORS_ALLOWED_ORIGINS lock frontend access to your real domain
+
+Build and run
+1. In client run npm install and npm run build
+2. Serve client/dist from your web server or deploy it to Cloudflare Pages
+3. In server run npm install
+4. In your Python environment install requirements from requirements.txt
+5. Start Node API on port 3000
+6. Start Python media service on port 5000
+
+Cloudflare DNS / proxy
+1. Create proxied DNS records for app, api, and media
+2. Enable Full (strict) SSL in Cloudflare if your origin has a valid certificate
+3. If your origin is private, put Cloudflare Tunnel in front of api and media instead of exposing ports directly
+
+Reverse proxy notes
+- If you use Nginx or Caddy, forward X-Forwarded-Proto and Host headers
+- Keep HTTPS enabled end-to-end or secure cookies will fail in production
+
+Quick smoke test after deployment
+- Open app.example.com
+- Register a user and verify the email link opens on api.example.com
+- Log in and confirm the token cookie is set with Secure and HttpOnly
+- Confirm profile loads from api.example.com
+- Confirm search and trending load from media.example.com

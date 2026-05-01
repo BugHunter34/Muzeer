@@ -2,13 +2,24 @@ from flask import Flask, request, jsonify, Response, stream_with_context
 from flask_cors import CORS
 import yt_dlp
 import requests
+import os
 from urllib.parse import quote
 from flask.cli import load_dotenv
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+
+def parse_csv_env(value, fallback=""):
+    source = value or fallback
+    return [entry.strip() for entry in source.split(",") if entry.strip()]
 
 # Allow your React app to talk to this service
-CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}})
+load_dotenv()
+
+allowed_origins = parse_csv_env(os.getenv("MEDIA_CORS_ALLOWED_ORIGINS"), "http://localhost:5173")
+CORS(app, resources={r"/*": {"origins": allowed_origins}})
 
 YDL_OPTS = {
     "format": "bestaudio/best",
@@ -18,8 +29,6 @@ YDL_OPTS = {
     "extract_flat": "in_playlist", 
     "default_search": "https://music.youtube.com/search?q=",
 }
-
-load_dotenv()
 
 def build_proxy_url(audio_url):
     if not audio_url:
@@ -141,4 +150,4 @@ def api_trending():
         return jsonify([])
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=int(os.getenv("MEDIA_PORT", "5000")))

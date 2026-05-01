@@ -5,6 +5,7 @@ import './index.css'
 import { FaPlay, FaPause, FaVolumeUp, FaPlus, FaHeart, FaSearch, FaSlidersH, FaTrash } from 'react-icons/fa'
 import { MdQueueMusic } from 'react-icons/md'
 import TokenCompartment from './components/TokenCompartment'
+import { API_BASE_URL, API_ORIGIN, MEDIA_API_BASE_URL, toAbsoluteApiUrl } from './config'
 
 // Add this to your CSS or a style tag to force icons to show
 const iconStyle = { display: 'inline-block', visibility: 'visible', opacity: 1 };
@@ -55,7 +56,7 @@ function App() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
 
-  const serverBase = "http://localhost:3000";
+  const serverBase = API_ORIGIN;
 
   // ✅ 1) Sync user (localStorage + event userUpdated + storage)
   useEffect(() => {
@@ -79,7 +80,7 @@ function App() {
     user?.avatarUrl
       ? (user.avatarUrl.startsWith("http")
         ? user.avatarUrl
-        : `${serverBase}${user.avatarUrl}`)
+        : toAbsoluteApiUrl(user.avatarUrl))
       : "";
 
   // --- Data State ---
@@ -153,7 +154,7 @@ useEffect(() => {
 
   const heartbeat = setInterval(async () => {
     try {
-      const res = await fetch('http://localhost:3000/api/auth/verify', {
+      const res = await fetch(`${API_BASE_URL}/auth/verify`, {
         method: 'GET',
         credentials: 'include'
       });
@@ -196,7 +197,7 @@ useEffect(() => {
 
     const presenceSync = setInterval(async () => {
       try {
-        await fetch('http://localhost:3000/api/me/presence', {
+        await fetch(`${API_BASE_URL}/me/presence`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -208,7 +209,7 @@ useEffect(() => {
           })
         });
 
-        const tokenRes = await fetch('http://localhost:3000/api/token/listen-event', {
+        const tokenRes = await fetch(`${API_BASE_URL}/token/listen-event`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -261,7 +262,7 @@ useEffect(() => {
 
     setTokenLoading(true);
     try {
-      const res = await fetch('http://localhost:3000/api/token/wallet', {
+      const res = await fetch(`${API_BASE_URL}/token/wallet`, {
         method: 'GET',
         credentials: 'include'
       });
@@ -302,7 +303,7 @@ useEffect(() => {
     if (!user) return;
 
     try {
-      const res = await fetch('http://localhost:3000/api/token/leaderboard', {
+      const res = await fetch(`${API_BASE_URL}/token/leaderboard`, {
         method: 'GET',
         credentials: 'include'
       });
@@ -319,7 +320,7 @@ useEffect(() => {
     if (!questKey) return;
 
     try {
-      const res = await fetch('http://localhost:3000/api/token/claim-quest', {
+      const res = await fetch(`${API_BASE_URL}/token/claim-quest`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -343,7 +344,7 @@ useEffect(() => {
     if (!actionKey) return;
 
     try {
-      const res = await fetch('http://localhost:3000/api/token/spend', {
+      const res = await fetch(`${API_BASE_URL}/token/spend`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -411,7 +412,7 @@ useEffect(() => {
   useEffect(() => {
     const fetchTrending = async () => {
       try {
-        const res = await fetch('http://localhost:5000/api/trending')
+        const res = await fetch(`${MEDIA_API_BASE_URL}/trending`)
         const data = await res.json()
         setFeaturedSongs(data)
       } catch (e) { console.error("Trending fetch error", e) }
@@ -442,7 +443,7 @@ useEffect(() => {
     const updatePresence = (playing) => {
       if (!currentTrack || !currentTrack.title || currentTrack.title === 'Select a track') return;
 
-      fetch('http://localhost:3000/api/auth/presence', {
+      fetch(`${API_BASE_URL}/auth/presence`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -629,7 +630,7 @@ useEffect(() => {
     if (!streamUrl && track.webpage_url) {
       setLoading(true)
       try {
-        const res = await fetch('http://localhost:5000/api/search', {
+        const res = await fetch(`${MEDIA_API_BASE_URL}/search`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: track.webpage_url }),
@@ -854,7 +855,7 @@ useEffect(() => {
     }, 120)
 
     try {
-      const response = await fetch('http://localhost:5000/api/search', {
+      const response = await fetch(`${MEDIA_API_BASE_URL}/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query }),

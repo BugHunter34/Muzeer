@@ -4,6 +4,10 @@ const bcrypt = require("bcrypt"); // Changed from bcryptjs to match your import
 const jwt = require("jsonwebtoken");
 const sendEmail = require('../utils/codeemailer');
 
+const getCookieOptions = (req) => ({
+  ...req.app.locals.cookieOptions,
+});
+
 const sanitizeUser = (user) => {
   return {
     _id: user._id,
@@ -86,12 +90,7 @@ exports.verify2FA = async (req, res) => {
       { expiresIn: "2h" }
     );
 
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: false, // Set to true if using HTTPS/Ngrok
-      maxAge: 2 * 60 * 60 * 1000,
-      sameSite: "lax",
-    });
+    res.cookie("token", token, getCookieOptions(req));
 
     res.status(200).json({
       message: "Login successful",

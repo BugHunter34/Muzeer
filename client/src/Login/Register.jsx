@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AuthLayout from './AuthLayout';
 import { authFormStyles } from './authFormStyles';
+import { API_BASE_URL } from '../config';
 
 export default function Register() {
   const [email, setEmail] = useState('');
@@ -18,7 +19,7 @@ export default function Register() {
 
     try {
       // Connecting to your route: router.post("/register", LoginController.register);
-      const response = await fetch('http://localhost:3000/api/auth/register', {
+      const response = await fetch(`${API_BASE_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, userName, password })

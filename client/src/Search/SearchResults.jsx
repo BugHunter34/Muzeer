@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { FaPlay, FaSearch } from 'react-icons/fa';
 import { MdQueueMusic } from 'react-icons/md';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { MEDIA_API_BASE_URL } from '../config';
 
 export default function SearchResults() {
   const navigate = useNavigate();
@@ -28,7 +29,7 @@ export default function SearchResults() {
       setLoading(true);
       setError('');
       try {
-        const response = await fetch('http://localhost:5000/api/search', {
+        const response = await fetch(`${MEDIA_API_BASE_URL}/search`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: initialQuery })

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AuthLayout from './AuthLayout';
 import { authFormStyles } from './authFormStyles';
+import { API_BASE_URL } from '../config';
 
 export default function Login() {
   // Login States
@@ -21,7 +22,7 @@ export default function Login() {
     setError('');
 
     try {
-      const response = await fetch('http://localhost:3000/api/auth/login', {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -47,7 +48,7 @@ export default function Login() {
     setError('');
 
     try {
-      const response = await fetch('http://localhost:3000/api/auth/login/verify-2fa', {
+      const response = await fetch(`${API_BASE_URL}/auth/login/verify-2fa`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, code: twoFacCode }),
