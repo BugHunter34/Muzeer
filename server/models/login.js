@@ -22,7 +22,10 @@ const loginSchema = new mongoose.Schema({
     trim: true
   },
 
-  passwordHash: { type: String, required: true },
+  passwordHash: { type: String, default: null },
+
+  // --- Google OAuth ---
+  googleId: { type: String, sparse: true },
 
   role: {
     type: String,
@@ -88,6 +91,12 @@ const loginSchema = new mongoose.Schema({
       createdAt: { type: Date, default: Date.now }
     }]
   },
+
+  activeEffects: [{
+    actionKey: { type: String },
+    label: { type: String },
+    expiresAt: { type: Date }
+  }],
 
   // --- Profile avatar ---
   avatarUrl: { type: String, default: "" },

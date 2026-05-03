@@ -232,7 +232,7 @@ export default function AdminAbuse() {
 
   const adjustUserTokens = async (userId, direction) => {
     if (!isSystemOwner) {
-      alert('Only system owners can mint or burn Muzeercoin.');
+      alert('Only system owners can add or remove Muzeer Coins.');
       return;
     }
 
@@ -273,7 +273,7 @@ export default function AdminAbuse() {
 
   const setUserTokenBalance = async (userId) => {
     if (!isSystemOwner) {
-      alert('Only system owners can set Muzeercoin balances.');
+      alert('Only system owners can set Muzeer Coins balances.');
       return;
     }
 
@@ -343,7 +343,7 @@ export default function AdminAbuse() {
 
     if (action.actionType === 'token_adjust') {
       const delta = Number(action.delta || 0);
-      const actionName = delta >= 0 ? 'mint' : 'burn';
+      const actionName = delta >= 0 ? 'add' : 'remove';
       return `${adminName}: ${actionName} ${Math.abs(delta)} ${action.symbol || 'MUZR'} ${delta >= 0 ? 'to' : 'from'} ${action.targetUserName || 'user'}`;
     }
 
@@ -454,7 +454,7 @@ export default function AdminAbuse() {
             <aside className="space-y-6 xl:sticky xl:top-6">
               <section className="rounded-2xl border border-cyan-400/20 bg-cyan-500/5 p-4">
                 <div className="mb-3 flex items-center justify-between gap-2">
-                  <h2 className="text-lg font-semibold text-cyan-200">Global Token Control</h2>
+                  <h2 className="text-lg font-semibold text-cyan-200">Coins Settings</h2>
                   <button
                     onClick={saveTokenControl}
                     disabled={savingTokenControl || !isSystemOwner}
@@ -464,7 +464,7 @@ export default function AdminAbuse() {
                   </button>
                 </div>
                 {!isSystemOwner && (
-                  <p className="mb-3 text-sm text-cyan-100/70">Only system owner can edit Muzeercoin settings.</p>
+                  <p className="mb-3 text-sm text-cyan-100/70">Only system owner can edit Muzeer Coins settings.</p>
                 )}
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
                   <label className="text-sm text-white/75">
@@ -472,7 +472,7 @@ export default function AdminAbuse() {
                     <input disabled={!isSystemOwner} value={tokenControl.symbol || ''} onChange={(e) => updateTokenControlField('symbol', e.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-base text-white focus:border-cyan-400/50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60" />
                   </label>
                   <label className="text-sm text-white/75">
-                    Sec / Token
+                    Sec / Coin
                     <input disabled={!isSystemOwner} type="number" min="1" value={tokenControl.qualifiedSecondsPerToken ?? 180} onChange={(e) => updateTokenControlField('qualifiedSecondsPerToken', e.target.value)} className="mt-1 w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-base text-white focus:border-cyan-400/50 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60" />
                   </label>
                   <label className="text-sm text-white/75">
@@ -493,7 +493,7 @@ export default function AdminAbuse() {
                   </label>
                   <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/85">
                     <input disabled={!isSystemOwner} type="checkbox" checked={Boolean(tokenControl.allowAdminMintBurn)} onChange={(e) => updateTokenControlField('allowAdminMintBurn', e.target.checked)} />
-                    Allow Admin Mint/Burn
+                    Allow Admin Add/Remove
                   </label>
                 </div>
               </section>
@@ -539,7 +539,7 @@ export default function AdminAbuse() {
                         </div>
                         <p className="text-sm text-white/60">{u.email}</p>
                         <p className="mt-1 text-xs text-emerald-300/80">
-                          Token balance: {u.tokenWallet?.balance || 0} {u.tokenWallet?.symbol || 'MUZR'}
+                          Coins: {u.tokenWallet?.balance || 0} {u.tokenWallet?.symbol || 'MUZR'}
                         </p>
                       </div>
                     </div>
@@ -593,9 +593,9 @@ export default function AdminAbuse() {
                   </div>
 
                   <div className="mt-4 rounded-xl border border-emerald-400/20 bg-emerald-500/5 p-3">
-                    <p className="text-xs uppercase tracking-[0.2em] text-emerald-300/80">Token Control</p>
+                    <p className="text-xs uppercase tracking-[0.2em] text-emerald-300/80">Coin Wallet</p>
                     {!isSystemOwner && (
-                      <p className="mt-2 text-xs text-emerald-100/70">Only system owner can edit user Muzeercoin balance.</p>
+                      <p className="mt-2 text-xs text-emerald-100/70">Only system owner can edit user Muzeer Coins.</p>
                     )}
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <input
@@ -612,14 +612,14 @@ export default function AdminAbuse() {
                         disabled={tokenUpdatingUserId === u._id || !isSystemOwner}
                         className="rounded-full border border-emerald-400/40 bg-emerald-500/15 px-4 py-1.5 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/25 disabled:opacity-60"
                       >
-                        Mint
+                        Add Coins
                       </button>
                       <button
                         onClick={() => adjustUserTokens(u._id, 'burn')}
                         disabled={tokenUpdatingUserId === u._id || !isSystemOwner}
                         className="rounded-full border border-red-400/40 bg-red-500/15 px-4 py-1.5 text-xs font-semibold text-red-200 transition hover:bg-red-500/25 disabled:opacity-60"
                       >
-                        Burn
+                        Remove
                       </button>
                       <button
                         onClick={() => setUserTokenBalance(u._id)}

@@ -193,7 +193,7 @@ exports.getConfig = async (req, res) => {
 exports.getWallet = async (req, res) => {
   try {
     const control = await getTokenControl();
-    const user = await Login.findById(req.user.id).select("tokenWallet rewardState tokenClaims");
+    const user = await Login.findById(req.user.id).select("tokenWallet rewardState tokenClaims activeEffects");
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -240,6 +240,7 @@ exports.getWallet = async (req, res) => {
       spendCatalog: Object.values(SPEND_CATALOG),
       quests,
       rewardsPaused: control.rewardsPaused,
+      activeEffects: (user.activeEffects || []).filter(e => new Date(e.expiresAt) > new Date()).map(e => ({ actionKey: e.actionKey, label: e.label, expiresAt: e.expiresAt })),
       recentClaims
     });
   } catch (error) {
@@ -385,7 +386,7 @@ exports.submitListenEvent = async (req, res) => {
 
     let suspiciousScore = Number(user.rewardState.suspiciousScore || 0);
     if (trackEventsForThisTrack > control.maxRepeatTrackEventsPerDay) suspiciousScore += 1;
-    if (secondsSinceLastEvent !== null && secondsSinceLastEvent === control.minTrackEventIntervalSeconds) suspiciousScore += 1;
+    if (secondsSinceLastEvent !== null && secondsSinceLastEvent <= control.minTrackEventIntervalSeconds) suspiciousScore += 1;
     user.rewardState.suspiciousScore = suspiciousScore;
 
     if (suspiciousScore >= control.suspiciousEventHardLimit) {
@@ -417,6 +418,13 @@ exports.submitListenEvent = async (req, res) => {
 
     if (suspiciousScore >= control.suspiciousEventPenaltyThreshold) {
       effectiveGrantedSeconds = Math.max(1, Math.floor(effectiveGrantedSeconds * 0.5));
+    }
+
+    // Active effect: double_xp_hour doubles effective earned seconds
+    const activeEffects = (Array.isArray(user.activeEffects) ? user.activeEffects : []).filter(e => new Date(e.expiresAt) > now);
+    user.activeEffects = activeEffects;
+    if (activeEffects.some(e => e.actionKey === 'double_xp_hour')) {
+      effectiveGrantedSeconds = Math.floor(effectiveGrantedSeconds * 2);
     }
 
     const uniqueArtistsSet = new Set(Array.isArray(user.rewardState.dailyUniqueArtists) ? user.rewardState.dailyUniqueArtists : []);
@@ -493,6 +501,12 @@ exports.submitListenEvent = async (req, res) => {
       dailyUniqueArtistsCount: (user.rewardState.dailyUniqueArtists || []).length,
       rewardedSecondsToday: user.rewardState.rewardedSecondsToday,
       dailyRemainingSeconds: Math.max(0, control.maxDailyQualifiedSeconds - user.rewardState.rewardedSecondsToday),
+      dailyListenSecondsToday: user.rewardState.dailyListenSecondsToday || 0,
+      dailyCapSeconds: control.maxDailyQualifiedSeconds,
+      progressToNextToken: Number(((user.rewardState.pendingQualifiedSeconds / control.qualifiedSecondsPerToken) * 100).toFixed(2)),
+      capProgressPercent: Number(((user.rewardState.rewardedSecondsToday / control.maxDailyQualifiedSeconds) * 100).toFixed(2)),
+      rewardsPaused: false,
+      activeEffects: activeEffects.map(e => ({ actionKey: e.actionKey, label: e.label, expiresAt: e.expiresAt })),
       quests: buildDailyQuests(user.rewardState || {}, control),
       recentClaims: (user.tokenClaims || []).slice(0, 5)
     });
@@ -602,7 +616,7 @@ exports.spendTokens = async (req, res) => {
       return res.status(400).json({ message: "Invalid actionKey" });
     }
 
-    const user = await Login.findById(req.user.id).select("tokenWallet rewardState");
+    const user = await Login.findById(req.user.id).select("tokenWallet rewardState activeEffects");
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -615,6 +629,7 @@ exports.spendTokens = async (req, res) => {
     user.tokenWallet.balance = balance - action.cost;
     user.tokenWallet.symbol = control.symbol;
 
+    if (!user.rewardState) user.rewardState = {};
     const spendHistory = Array.isArray(user.rewardState?.recentSpends)
       ? user.rewardState.recentSpends
       : [];
@@ -626,6 +641,12 @@ exports.spendTokens = async (req, res) => {
     });
 
     user.rewardState.recentSpends = spendHistory.slice(0, 20);
+
+    const spendExpiresAt = new Date(Date.now() + action.durationHours * 60 * 60 * 1000);
+    user.activeEffects = (Array.isArray(user.activeEffects) ? user.activeEffects : [])
+      .filter(e => new Date(e.expiresAt) > new Date())
+      .concat([{ actionKey: action.key, label: action.label, expiresAt: spendExpiresAt }]);
+
     await user.save();
 
     await addLedgerEntry({
@@ -641,7 +662,8 @@ exports.spendTokens = async (req, res) => {
       message: "Spend applied",
       action,
       balance: user.tokenWallet.balance,
-      symbol: control.symbol
+      symbol: control.symbol,
+      activeEffects: user.activeEffects.map(e => ({ actionKey: e.actionKey, label: e.label, expiresAt: e.expiresAt }))
     });
   } catch (error) {
     console.error("Token spend error:", error);

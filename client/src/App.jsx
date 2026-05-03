@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom';
 import './App.css'
 import './index.css'
-import { FaPlay, FaPause, FaVolumeUp, FaPlus, FaHeart, FaSearch, FaSlidersH, FaTrash, FaRedo, FaRetweet, FaBan } from 'react-icons/fa'
+import { FaPlay, FaPause, FaVolumeUp, FaPlus, FaHeart, FaSearch, FaSlidersH, FaTrash, FaRedo, FaRetweet, FaBan, FaCloudDownloadAlt } from 'react-icons/fa'
 import { MdQueueMusic } from 'react-icons/md'
 import TokenCompartment from './components/TokenCompartment'
 import { API_BASE_URL, API_ORIGIN, MEDIA_API_BASE_URL, toAbsoluteApiUrl } from './config'
@@ -30,7 +30,9 @@ const DEFAULT_TOKEN_WALLET = {
   tier: { name: 'Starter', multiplierHint: '+10% max streak' },
   quests: [],
   spendCatalog: [],
-  recentClaims: []
+  recentClaims: [],
+  rewardsPaused: false,
+  activeEffects: []
 }
 
 const detectLowPowerDevice = () => {
@@ -80,6 +82,26 @@ function App() {
   const [user, setUser] = useState(null);
 
   const serverBase = API_ORIGIN;
+
+  // --- Google OAuth callback handler ---
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('googleAuth')) return;
+    // Strip the param from URL without reload
+    const cleanUrl = window.location.pathname;
+    window.history.replaceState({}, '', cleanUrl);
+    // Fetch user object using the cookie that was set by the backend
+    fetch(`${API_BASE_URL}/auth/me`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.user) {
+          const u = data.user;
+          storageSet('user', JSON.stringify({ _id: u._id, email: u.email, userName: u.userName, role: u.role }));
+          window.dispatchEvent(new Event('userUpdated'));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // ✅ 1) Sync user (localStorage + event userUpdated + storage)
   useEffect(() => {
@@ -144,9 +166,17 @@ function App() {
   const [playlists, setPlaylists] = useState(DEFAULT_PLAYLISTS)
   const [activePlaylistId, setActivePlaylistId] = useState(DEFAULT_PLAYLISTS[0].id)
   const [newPlaylistName, setNewPlaylistName] = useState('')
+  const [importSource, setImportSource] = useState('youtube')
+  const [importUrl, setImportUrl] = useState('')
+  const [importBusy, setImportBusy] = useState(false)
+  const [importError, setImportError] = useState('')
+  const [importStatus, setImportStatus] = useState('')
   const [rightPanelMode, setRightPanelMode] = useState('queue')
   const [queue, setQueue] = useState([])
   const [queueIndex, setQueueIndex] = useState(0)
+  const [playbackSource, setPlaybackSource] = useState('queue')
+  const [playlistPlaybackTracks, setPlaylistPlaybackTracks] = useState([])
+  const [playlistPlaybackIndex, setPlaylistPlaybackIndex] = useState(0)
 
   // --- Audio Player State ---
   const audioRef = useRef(null);
@@ -171,6 +201,9 @@ function App() {
   const loopModeRef = useRef(0)
   const queueRef = useRef([])
   const queueIndexRef = useRef(0)
+  const playbackSourceRef = useRef('queue')
+  const playlistPlaybackTracksRef = useRef([])
+  const playlistPlaybackIndexRef = useRef(0)
   const currentTrackRef = useRef(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [volume, setVolume] = useState(0.5)
@@ -195,6 +228,18 @@ function App() {
   useEffect(() => {
     queueIndexRef.current = queueIndex
   }, [queueIndex])
+
+  useEffect(() => {
+    playbackSourceRef.current = playbackSource
+  }, [playbackSource])
+
+  useEffect(() => {
+    playlistPlaybackTracksRef.current = playlistPlaybackTracks
+  }, [playlistPlaybackTracks])
+
+  useEffect(() => {
+    playlistPlaybackIndexRef.current = playlistPlaybackIndex
+  }, [playlistPlaybackIndex])
 
   useEffect(() => {
     currentTrackRef.current = currentTrack
@@ -297,7 +342,15 @@ useEffect(() => {
             streakDays: typeof tokenData.streakDays === 'number' ? tokenData.streakDays : prev.streakDays,
             suspiciousScore: typeof tokenData.suspiciousScore === 'number' ? tokenData.suspiciousScore : prev.suspiciousScore,
             quests: Array.isArray(tokenData.quests) ? tokenData.quests : prev.quests,
-            recentClaims: Array.isArray(tokenData.recentClaims) ? tokenData.recentClaims : prev.recentClaims
+            recentClaims: Array.isArray(tokenData.recentClaims) ? tokenData.recentClaims : prev.recentClaims,
+            progressToNextToken: typeof tokenData.progressToNextToken === 'number'
+              ? tokenData.progressToNextToken
+              : Number((((typeof tokenData.pendingQualifiedSeconds === 'number' ? tokenData.pendingQualifiedSeconds : prev.pendingQualifiedSeconds) / (prev.qualifiedSecondsPerToken || 180)) * 100).toFixed(2)),
+            capProgressPercent: typeof tokenData.capProgressPercent === 'number' ? tokenData.capProgressPercent : prev.capProgressPercent,
+            dailyListenSecondsToday: typeof tokenData.dailyListenSecondsToday === 'number' ? tokenData.dailyListenSecondsToday : prev.dailyListenSecondsToday,
+            dailyCapSeconds: typeof tokenData.dailyCapSeconds === 'number' ? tokenData.dailyCapSeconds : prev.dailyCapSeconds,
+            rewardsPaused: typeof tokenData.rewardsPaused === 'boolean' ? tokenData.rewardsPaused : prev.rewardsPaused,
+            activeEffects: Array.isArray(tokenData.activeEffects) ? tokenData.activeEffects : prev.activeEffects
           }));
         }
       } catch (err) {
@@ -341,7 +394,9 @@ useEffect(() => {
         tier: data.tier || DEFAULT_TOKEN_WALLET.tier,
         quests: Array.isArray(data.quests) ? data.quests : [],
         spendCatalog: Array.isArray(data.spendCatalog) ? data.spendCatalog : [],
-        recentClaims: Array.isArray(data.recentClaims) ? data.recentClaims : []
+        recentClaims: Array.isArray(data.recentClaims) ? data.recentClaims : [],
+        rewardsPaused: data.rewardsPaused || false,
+        activeEffects: Array.isArray(data.activeEffects) ? data.activeEffects : []
       });
     } catch (err) {
       console.error('Failed to load token wallet', err);
@@ -424,6 +479,46 @@ useEffect(() => {
     }
   }, [user]);
 
+  const extractVideoIdFromUrl = (rawUrl) => {
+    const value = String(rawUrl || '').trim()
+    if (!value) return null
+
+    try {
+      const parsed = new URL(value)
+      const byVid = parsed.searchParams.get('vid')
+      if (byVid) return byVid
+
+      const byV = parsed.searchParams.get('v')
+      if (byV) return byV
+
+      if (parsed.hostname === 'youtu.be') {
+        const shortId = parsed.pathname.replace(/^\//, '')
+        return shortId || null
+      }
+    } catch {
+      return null
+    }
+
+    return null
+  }
+
+  const sanitizeTrackForPlayback = (track) => {
+    if (!track || typeof track !== 'object') return track
+
+    const normalized = { ...track }
+    const videoId = normalized.video_id
+      || extractVideoIdFromUrl(normalized.webpage_url)
+      || extractVideoIdFromUrl(normalized.audio_url)
+      || extractVideoIdFromUrl(normalized.proxy_url)
+
+    if (videoId) {
+      normalized.video_id = videoId
+      normalized.proxy_url = `${MEDIA_API_BASE_URL}/stream?vid=${encodeURIComponent(videoId)}`
+    }
+
+    return normalized
+  }
+
   useEffect(() => {
     try {
       const raw = storageGet('muzeer-playlists')
@@ -435,7 +530,9 @@ useEffect(() => {
         .map((playlist, idx) => ({
           id: playlist.id || `playlist-${Date.now()}-${idx}`,
           name: playlist.name.trim() || `Playlist ${idx + 1}`,
-          tracks: Array.isArray(playlist.tracks) ? playlist.tracks : []
+          tracks: Array.isArray(playlist.tracks)
+            ? playlist.tracks.map((track) => sanitizeTrackForPlayback(track))
+            : []
         }))
 
       if (sanitized.length > 0) {
@@ -590,13 +687,14 @@ useEffect(() => {
   // --- LOGIC: PLAYER ---
   const handleNextTrack = () => {
     const liveLoopMode = loopModeRef.current
-    const liveQueue = queueRef.current
-    const liveQueueIndex = queueIndexRef.current
+    const livePlaybackSource = playbackSourceRef.current
+    const liveTracks = livePlaybackSource === 'playlist' ? playlistPlaybackTracksRef.current : queueRef.current
+    const liveTrackIndex = livePlaybackSource === 'playlist' ? playlistPlaybackIndexRef.current : queueIndexRef.current
     const liveCurrentTrack = currentTrackRef.current
 
     // Loop one: restart current track
     if (liveLoopMode === 2) {
-      const loopTrack = liveQueue[liveQueueIndex] || liveCurrentTrack
+      const loopTrack = liveTracks[liveTrackIndex] || liveCurrentTrack
       if (loopTrack && (loopTrack.proxy_url || loopTrack.audio_url || loopTrack.webpage_url)) {
         playTrack(loopTrack, false)
       }
@@ -604,16 +702,24 @@ useEffect(() => {
     }
 
     // Move to next track
-    if (liveQueue.length > liveQueueIndex + 1) {
-      const nextIndex = liveQueueIndex + 1
-      setQueueIndex(nextIndex)
-      playTrack(liveQueue[nextIndex], false)
+    if (liveTracks.length > liveTrackIndex + 1) {
+      const nextIndex = liveTrackIndex + 1
+      if (livePlaybackSource === 'playlist') {
+        setPlaylistPlaybackIndex(nextIndex)
+      } else {
+        setQueueIndex(nextIndex)
+      }
+      playTrack(liveTracks[nextIndex], false)
     } 
     // Loop all: go back to first track
     else if (liveLoopMode === 1) {
-      if (liveQueue.length > 0) {
-        setQueueIndex(0)
-        playTrack(liveQueue[0], false)
+      if (liveTracks.length > 0) {
+        if (livePlaybackSource === 'playlist') {
+          setPlaylistPlaybackIndex(0)
+        } else {
+          setQueueIndex(0)
+        }
+        playTrack(liveTracks[0], false)
       } else if (liveCurrentTrack && (liveCurrentTrack.proxy_url || liveCurrentTrack.audio_url || liveCurrentTrack.webpage_url)) {
         playTrack(liveCurrentTrack, false)
       } else {
@@ -637,6 +743,15 @@ useEffect(() => {
   }
 
   const handlePrevTrack = () => {
+    if (playbackSource === 'playlist') {
+      if (playlistPlaybackIndex > 0) {
+        const prevIndex = playlistPlaybackIndex - 1
+        setPlaylistPlaybackIndex(prevIndex)
+        playTrack(playlistPlaybackTracks[prevIndex], false)
+      }
+      return
+    }
+
     if (queueIndex > 0) {
       const prevIndex = queueIndex - 1
       setQueueIndex(prevIndex)
@@ -780,12 +895,19 @@ useEffect(() => {
     }
   }, [potatoMode, isPlaying])
 
-  const playTrack = async (track, isNewPlay = true) => {
+  const playTrack = async (trackInput, isNewPlay = true) => {
+    let track = sanitizeTrackForPlayback(trackInput)
+
     if (audioRef.current) {
       audioRef.current.pause();
     }
 
     let streamUrl = track.proxy_url || track.audio_url
+
+    if (!streamUrl && track.video_id) {
+      streamUrl = `${MEDIA_API_BASE_URL}/stream?vid=${encodeURIComponent(track.video_id)}`
+      track = { ...track, proxy_url: streamUrl }
+    }
 
     if (!streamUrl && track.webpage_url) {
       setLoading(true)
@@ -796,8 +918,9 @@ useEffect(() => {
           body: JSON.stringify({ query: track.webpage_url }),
         })
         const data = await res.json()
-        streamUrl = data.proxy_url || data.audio_url
-        track = { ...track, ...data }
+        const trackData = sanitizeTrackForPlayback(Array.isArray(data) ? data[0] : data)
+        streamUrl = trackData?.proxy_url || trackData?.audio_url
+        track = { ...track, ...trackData }
       } catch (e) { console.error(e) }
       setLoading(false)
     }
@@ -836,14 +959,31 @@ useEffect(() => {
     if (nextQueue.length > 0) {
       setQueue(nextQueue)
       setQueueIndex(0)
+      setPlaybackSource('queue')
+      setRightPanelMode('queue')
     }
 
     playTrack(track, true)
   }
 
   const playFromQueue = (index) => {
+    if (!queue[index]) return
+    setPlaybackSource('queue')
     setQueueIndex(index)
+    setRightPanelMode('queue')
     playTrack(queue[index], true)
+  }
+
+  const playFromPlaylist = (tracks, index) => {
+    const safeIndex = Math.max(0, index || 0)
+    if (!Array.isArray(tracks) || !tracks[safeIndex]) return
+
+    const sanitizedTracks = tracks.map((item) => sanitizeTrackForPlayback(item))
+    setPlaybackSource('playlist')
+    setPlaylistPlaybackTracks(sanitizedTracks)
+    setPlaylistPlaybackIndex(safeIndex)
+    setRightPanelMode('playlist')
+    playTrack(sanitizedTracks[safeIndex], true)
   }
 
   const togglePlayback = async () => {
@@ -947,6 +1087,7 @@ useEffect(() => {
       if (Array.isArray(searchTracks) && searchTracks.length > 0) {
         setQueue(searchTracks)
         setQueueIndex(0)
+        setPlaybackSource('queue')
         storageRemove('searchPlaylist')
         storageRemove('searchPlaylistIndex')
       }
@@ -995,6 +1136,135 @@ useEffect(() => {
     setActivePlaylistId(id)
     setRightPanelMode('playlist')
     setNewPlaylistName('')
+  }
+
+  const createUniquePlaylistName = (incomingName) => {
+    const base = (incomingName || 'Imported playlist').trim() || 'Imported playlist'
+    const existing = new Set(playlists.map((playlist) => playlist.name.toLowerCase()))
+
+    if (!existing.has(base.toLowerCase())) return base
+
+    let attempt = 2
+    while (existing.has(`${base} (${attempt})`.toLowerCase())) {
+      attempt += 1
+    }
+
+    return `${base} (${attempt})`
+  }
+
+  const isActiveTrack = (track) => Boolean(currentTrack) && (
+    (track?.video_id && currentTrack.video_id && track.video_id === currentTrack.video_id) ||
+    (track?.webpage_url && currentTrack.webpage_url && track.webpage_url === currentTrack.webpage_url)
+  )
+
+  const resolvePlaylistPreview = async (playlistId, tracks) => {
+
+    const unresolved = tracks
+      .filter((t) => !t.proxy_url && !t.audio_url && t.webpage_url)
+      .slice(0, 3)
+
+    for (const track of unresolved) {
+      try {
+        const res = await fetch(`${MEDIA_API_BASE_URL}/search`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: track.webpage_url })
+        })
+        if (!res.ok) continue
+        const data = await res.json()
+        const resolved = Array.isArray(data) ? data[0] : data
+        if (resolved?.proxy_url || resolved?.audio_url) {
+          setPlaylists((prev) =>
+            prev.map((pl) => {
+              if (pl.id !== playlistId) return pl
+              return {
+                ...pl,
+                tracks: pl.tracks.map((t) =>
+                  t.webpage_url === track.webpage_url ? { ...t, ...resolved } : t
+                )
+              }
+            })
+          )
+        }
+      } catch { /* silent — preview resolution is best-effort */ }
+      await new Promise((r) => setTimeout(r, 1000))
+    }
+  }
+
+  const normalizeImportedTrack = (track) => {
+    const webpageUrl = track?.webpage_url || track?.url || track?.link || null
+    const videoId = track?.video_id || null
+    const derivedProxyUrl = videoId ? `${MEDIA_API_BASE_URL}/stream?vid=${encodeURIComponent(videoId)}` : null
+
+    return sanitizeTrackForPlayback({
+      title: track?.title || 'Unknown title',
+      artist: track?.artist || track?.channel || 'Unknown artist',
+      thumbnail: track?.thumbnail || null,
+      webpage_url: webpageUrl,
+      audio_url: track?.audio_url || null,
+      proxy_url: track?.proxy_url || derivedProxyUrl,
+      source: track?.source || importSource,
+      video_id: videoId
+    })
+  }
+
+  const handleImportPlaylist = async () => {
+    const cleanedUrl = importUrl.trim()
+    if (!cleanedUrl || importBusy) return
+
+    setImportBusy(true)
+    setImportError('')
+    setImportStatus('Importing playlist...')
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/playlists/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          source: importSource,
+          url: cleanedUrl
+        })
+      })
+
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(data?.error || `Import failed (${response.status})`)
+      }
+
+      const importedTracks = Array.isArray(data?.tracks)
+        ? data.tracks.map(normalizeImportedTrack).filter((track) => track.webpage_url || track.audio_url || track.proxy_url)
+        : []
+
+      if (!importedTracks.length) {
+        throw new Error('No playable tracks were found in the imported playlist.')
+      }
+
+      const importedName = createUniquePlaylistName(data?.playlist?.name || `${importSource} import`)
+      const importedId = `playlist-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+
+      setPlaylists((prev) => [...prev, {
+        id: importedId,
+        name: importedName,
+        tracks: importedTracks
+      }])
+
+      setActivePlaylistId(importedId)
+      setRightPanelMode('playlist')
+      setImportUrl('')
+      setImportStatus(`Imported ${importedTracks.length} tracks into "${importedName}".`)
+      setActivePlaylistId(importedId)
+      setRightPanelMode('playlist')
+      setImportUrl('')
+      setImportStatus(`Imported ${importedTracks.length} tracks into "${importedName}".`)
+      resolvePlaylistPreview(importedId, importedTracks)
+    } catch (err) {
+      setImportError(err?.message || 'Playlist import failed.')
+      setImportStatus('')
+    } finally {
+      setImportBusy(false)
+    }
   }
 
   const removePlaylist = (playlistId) => {
@@ -1302,7 +1572,13 @@ useEffect(() => {
         <nav className="nav-shell sticky top-0 z-50 mx-auto w-full max-w-[1600px] rounded-b-3xl border-b border-white/10 bg-[color:var(--panel)]/95 backdrop-blur-md">
           <div className="flex items-center justify-between px-4 py-4 sm:px-5">
             <div className="flex items-center gap-3">
-              <div className="brand-mark h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-300 to-amber-400 flex items-center justify-center font-bold text-black">M</div>
+              <div className="brand-mark h-8 w-8 overflow-hidden rounded-lg border border-white/15 bg-black/20">
+                <img
+                  src="/muzeer.png"
+                  alt={`${appName} logo`}
+                  className="h-full w-full object-cover"
+                />
+              </div>
               <span className="brand-title font-bold tracking-wide text-lg bg-clip-text text-transparent bg-gradient-to-r from-emerald-300 to-amber-200">
                 {appName}
               </span>
@@ -1485,6 +1761,61 @@ useEffect(() => {
                     placeholder="New playlist name"
                     className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white placeholder:text-white/35 outline-none focus:border-pink-500/50"
                   />
+                </div>
+
+                <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-2.5">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/45">Import Playlist</p>
+                    <FaCloudDownloadAlt className="text-[12px] text-white/45" />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={importSource}
+                      onChange={(e) => {
+                        setImportSource(e.target.value)
+                        setImportError('')
+                        setImportStatus('')
+                      }}
+                      className="rounded-lg border border-white/10 bg-white/5 px-2 py-2 text-[11px] text-white outline-none focus:border-pink-500/50"
+                    >
+                      <option value="youtube">YouTube</option>
+                      <option value="spotify">Spotify</option>
+                    </select>
+
+                    <input
+                      type="text"
+                      value={importUrl}
+                      onChange={(e) => {
+                        setImportUrl(e.target.value)
+                        setImportError('')
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          handleImportPlaylist()
+                        }
+                      }}
+                      placeholder={importSource === 'youtube' ? 'YouTube playlist URL' : 'Spotify playlist URL'}
+                      className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-white placeholder:text-white/30 outline-none focus:border-pink-500/50"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleImportPlaylist}
+                    disabled={importBusy || !importUrl.trim()}
+                    className="mt-2 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-semibold text-white/80 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {importBusy ? 'Importing...' : `Import from ${importSource === 'youtube' ? 'YouTube' : 'Spotify'}`}
+                  </button>
+
+                  {importError && (
+                    <p className="mt-2 text-[10px] text-rose-300">{importError}</p>
+                  )}
+                  {importStatus && (
+                    <p className="mt-2 text-[10px] text-emerald-300">{importStatus}</p>
+                  )}
                 </div>
 
                 <div className="mt-3 flex-1 min-h-0 overflow-y-auto pr-1 custom-scrollbar space-y-1 text-sm text-[color:var(--muted)]">
@@ -1740,7 +2071,7 @@ useEffect(() => {
               ) : (
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   {quickPicks.map((item, i) => (
-                    <div key={i} className="group relative flex items-center gap-4 overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-3 transition hover:border-pink-500/30">
+                    <div key={i} onClick={() => playTrack(item)} className="group relative flex items-center gap-4 overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-3 transition hover:border-pink-500/30 cursor-pointer">
                       <div className="h-16 w-16 rounded-2xl bg-white/10 overflow-hidden relative">
                         <img src={item.thumbnail} className="h-full w-full object-cover" alt="" />
                         <button
@@ -1757,7 +2088,7 @@ useEffect(() => {
 
                       <div className="absolute right-0 top-0 bottom-0 flex w-10 flex-col border-l border-white/10 bg-white/[0.03] md:w-11 2xl:w-16">
                         <button
-                          onClick={() => playTrack(item)}
+                          onClick={(e) => { e.stopPropagation(); playTrack(item); }}
                           className="flex flex-1 items-center justify-center gap-1 border-b border-white/10 text-[#00ff99] transition hover:bg-white/10 2xl:flex-col 2xl:gap-0.5"
                           aria-label={`Play ${item.title || 'track'}`}
                         >
@@ -1765,7 +2096,7 @@ useEffect(() => {
                           <span className="hidden 2xl:block text-[8px] leading-none">Play</span>
                         </button>
                         <button
-                          onClick={() => addToQueue(item)}
+                          onClick={(e) => { e.stopPropagation(); addToQueue(item); }}
                           className="flex flex-1 items-center justify-center gap-1 border-b border-white/10 text-white/75 transition hover:bg-white/10 hover:text-white 2xl:flex-col 2xl:gap-0.5"
                           aria-label={`Queue ${item.title || 'track'}`}
                         >
@@ -1773,7 +2104,7 @@ useEffect(() => {
                           <span className="hidden 2xl:block text-[8px] leading-none">Queue</span>
                         </button>
                         <button
-                          onClick={() => addTrackToPlaylist(item)}
+                          onClick={(e) => { e.stopPropagation(); addTrackToPlaylist(item); }}
                           className="flex flex-1 items-center justify-center gap-1 text-pink-200 transition hover:bg-pink-500/20 2xl:flex-col 2xl:gap-0.5"
                           aria-label={`Save ${item.title || 'track'}`}
                         >
@@ -1831,18 +2162,25 @@ useEffect(() => {
                     activePlaylist.tracks.map((track, index) => (
                       <div
                         key={`${track.webpage_url || track.title}-${index}`}
-                        onClick={() => playTrack(track)}
-                        className="flex items-center gap-3 p-2 rounded-xl transition cursor-pointer hover:bg-white/5 border border-transparent"
+                        onClick={() => playFromPlaylist(activePlaylist.tracks, index)}
+                        className={`flex items-center gap-3 p-2 rounded-xl transition cursor-pointer ${isActiveTrack(track) ? 'bg-pink-500/10 border border-pink-500/20' : 'hover:bg-white/5 border border-transparent'}`}
                       >
                         <div className="h-10 w-10 rounded-lg overflow-hidden shrink-0 relative">
                           {track.thumbnail ? (
-                            <img src={track.thumbnail} className="h-full w-full object-cover" alt="" />
+                            <img src={track.thumbnail} className={`h-full w-full object-cover ${isActiveTrack(track) ? 'opacity-40' : ''}`} alt="" />
                           ) : (
                             <div className="h-full w-full bg-white/10" />
                           )}
+                          {isActiveTrack(track) && (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <div className="w-1 h-3 bg-[#00ff00] animate-pulse mx-[1px]"></div>
+                              <div className="w-1 h-4 bg-[#00ff00] animate-pulse mx-[1px]"></div>
+                              <div className="w-1 h-2 bg-[#00ff00] animate-pulse mx-[1px]"></div>
+                            </div>
+                          )}
                         </div>
                         <div className="overflow-hidden">
-                          <p className="text-xs font-bold truncate text-white">{track.title}</p>
+                          <p className={`text-xs font-bold truncate ${isActiveTrack(track) ? 'text-[#00ff00]' : 'text-white'}`}>{track.title}</p>
                           <p className="text-[10px] text-[color:var(--muted)] truncate">{track.artist}</p>
                         </div>
                       </div>
@@ -1863,10 +2201,10 @@ useEffect(() => {
                     <div
                       key={i}
                       onClick={() => playFromQueue(i)}
-                      className={`flex items-center gap-3 p-2 rounded-xl transition cursor-pointer ${i === queueIndex ? 'bg-pink-500/10 border border-pink-500/20' : 'hover:bg-white/5 border border-transparent'}`}>
+                      className={`flex items-center gap-3 p-2 rounded-xl transition cursor-pointer ${playbackSource === 'queue' && i === queueIndex ? 'bg-pink-500/10 border border-pink-500/20' : 'hover:bg-white/5 border border-transparent'}`}>
                       <div className="h-10 w-10 rounded-lg overflow-hidden shrink-0 relative">
-                        <img src={track.thumbnail} className={`h-full w-full object-cover ${i === queueIndex ? 'opacity-40' : ''}`} alt="" />
-                        {i === queueIndex && (
+                        <img src={track.thumbnail} className={`h-full w-full object-cover ${playbackSource === 'queue' && i === queueIndex ? 'opacity-40' : ''}`} alt="" />
+                        {playbackSource === 'queue' && i === queueIndex && (
                           <div className="absolute inset-0 flex items-center justify-center">
                             <div className="w-1 h-3 bg-[#00ff00] animate-pulse mx-[1px]"></div>
                             <div className="w-1 h-4 bg-[#00ff00] animate-pulse mx-[1px]"></div>
@@ -1875,7 +2213,7 @@ useEffect(() => {
                         )}
                       </div>
                       <div className="overflow-hidden">
-                        <p className={`text-xs font-bold truncate ${i === queueIndex ? 'text-[#00ff00]' : 'text-white'}`}>{track.title}</p>
+                        <p className={`text-xs font-bold truncate ${playbackSource === 'queue' && i === queueIndex ? 'text-[#00ff00]' : 'text-white'}`}>{track.title}</p>
                         <p className="text-[10px] text-[color:var(--muted)] truncate">{track.artist}</p>
                       </div>
                     </div>

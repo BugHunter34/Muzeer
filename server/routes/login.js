@@ -5,6 +5,7 @@ const LoginController = require("../controllers/login");
 const RegisterController = require("../controllers/register");
 const presenceController = require("../controllers/presence");
 const meController = require("../controllers/me");
+const googleAuth = require("../controllers/googleAuth");
 
 const auth = require("../middleware/auth");
 const admin = require("../middleware/admin");
@@ -16,6 +17,12 @@ const admin = require("../middleware/admin");
 router.post("/login", LoginController.login);
 router.post("/register", RegisterController.register);
 router.post("/login/verify-2fa", LoginController.verify2FA);
+
+// ----------------------
+// GOOGLE OAUTH
+// ----------------------
+router.get("/google", googleAuth.googleRedirect);
+router.get("/google/callback", googleAuth.googleCallback);
 
 // ----------------------
 // NORMAL USER (Profile)

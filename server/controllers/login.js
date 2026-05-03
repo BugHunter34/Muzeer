@@ -17,12 +17,33 @@ const sanitizeUser = (user) => {
   };
 };
 
+const issueLoginResponse = (req, res, user) => {
+  const token = jwt.sign(
+    { id: user._id, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: "2h" }
+  );
+
+  res.cookie("token", token, getCookieOptions(req));
+
+  return res.status(200).json({
+    message: "Login successful",
+    token,
+    user: { id: user._id, email: user.email, userName: user.userName, role: user.role }
+  });
+};
+
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
     const user = await Login.findOne({ email: email.toLowerCase().trim() });
     
     if (!user) return res.status(401).json({ message: "Invalid credentials" });
+
+    // OAuth-only accounts have no password — direct them to Google login
+    if (!user.passwordHash) {
+      return res.status(401).json({ message: "This account uses Google sign-in. Please use Continue with Google." });
+    }
 
     const isMatch = await bcrypt.compare(password, user.passwordHash);
     if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
@@ -42,8 +63,17 @@ exports.login = async (req, res) => {
     user.twoFactorExpires = Date.now() + 10 * 60 * 1000;
     await user.save();
 
-    // 4. Send the code via email using your codeemailer
-    await sendEmail(user.email, code, user.role);
+    // 4. Send the code via email using your codeemailer.
+    // If email delivery is unavailable, allow direct login fallback instead of hard-failing.
+    try {
+      await sendEmail(user.email, code, user.role);
+    } catch (mailErr) {
+      console.error("2FA email delivery failed, falling back to direct login:", mailErr.message);
+      user.twoFactorCode = undefined;
+      user.twoFactorExpires = undefined;
+      await user.save();
+      return issueLoginResponse(req, res, user);
+    }
 
     // 5. Tell React to show the 2FA input box instead of logging them in!
     return res.status(200).json({
@@ -68,8 +98,11 @@ exports.verify2FA = async (req, res) => {
 
     if (!user) return res.status(401).json({ message: "User not found" });
 
+    const normalizedCode = String(code || '').replace(/\D/g, '').trim();
+    const normalizedStoredCode = String(user.twoFactorCode || '').replace(/\D/g, '').trim();
+
     // 1. Zkontroluj, jestli kód sedí
-    if (user.twoFactorCode !== code) {
+    if (!normalizedCode || normalizedStoredCode !== normalizedCode) {
       return res.status(401).json({ message: "Invalid verification code" });
     }
 
@@ -83,20 +116,7 @@ exports.verify2FA = async (req, res) => {
     user.twoFactorExpires = undefined;
     await user.save();
 
-    // 4. TVŮJ PŮVODNÍ KÓD PRO VYTVOŘENÍ JWT A COOKIES
-    const token = jwt.sign(
-      { id: user._id, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "2h" }
-    );
-
-    res.cookie("token", token, getCookieOptions(req));
-
-    res.status(200).json({
-      message: "Login successful",
-      token: token, 
-      user: { id: user._id, email: user.email, userName: user.userName, role: user.role }
-    });
+    return issueLoginResponse(req, res, user);
 
   } catch (err) {
     console.error("Login Phase 2 Error:", err);

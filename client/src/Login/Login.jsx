@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AuthLayout from './AuthLayout';
 import { authFormStyles } from './authFormStyles';
-import { API_BASE_URL } from '../config';
+import { API_BASE_URL, API_ORIGIN } from '../config';
 
 export default function Login() {
   // Login States
@@ -34,9 +34,18 @@ export default function Login() {
       if (response.ok && data.requires2FA) {
         // Backend says password is good, now show the 2FA screen
         setIs2FA(true);
-      } else {
-        setError(data.message || 'Login failed');
+        return;
       }
+
+      if (response.ok && data.token && data.user) {
+        // Fallback path when backend logs user in directly (e.g., email provider unavailable)
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        window.location.href = '/';
+        return;
+      }
+
+      setError(data.message || data.error || 'Login failed');
     } catch (err) {
       setError('Server error. Is the backend running?');
     }
@@ -47,11 +56,17 @@ export default function Login() {
     e.preventDefault();
     setError('');
 
+    const normalizedCode = (twoFacCode || '').replace(/\D/g, '').slice(0, 6);
+    if (normalizedCode.length !== 6) {
+      setError('Enter all 6 digits from the verification email.');
+      return;
+    }
+
     try {
       const response = await fetch(`${API_BASE_URL}/auth/login/verify-2fa`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, code: twoFacCode }),
+        body: JSON.stringify({ email, code: normalizedCode }),
         credentials: 'include'
       });
 
@@ -64,7 +79,7 @@ export default function Login() {
         
         window.location.href = '/'; // Hard redirect to wake up App.jsx
       } else {
-        setError(data.message || 'Invalid verification code');
+        setError(data.message || data.error || 'Invalid verification code');
       }
     } catch (err) {
       setError('Server error during verification.');
@@ -166,10 +181,10 @@ export default function Login() {
             <input
               style={styles.codeBox}
               type="text"
-              maxLength="6"
+              maxLength="12"
               placeholder="••••••"
               value={twoFacCode}
-              onChange={(e) => setTwoFacCode(e.target.value.replace(/\D/g, ''))} // Only allow numbers
+              onChange={(e) => setTwoFacCode(e.target.value.replace(/\D/g, '').slice(0, 6))} // Keep only first 6 digits
               required
               autoFocus
             />
@@ -220,17 +235,14 @@ export default function Login() {
           </div>
 
           <div style={styles.socialGrid}>
-            <button type="button" style={styles.socialButton} className="auth-button">
+            <button
+              type="button"
+              style={styles.socialButton}
+              className="auth-button"
+              onClick={() => { window.location.href = `${API_ORIGIN}/api/auth/google`; }}
+            >
               <span style={styles.socialBadge}>G</span>
               Continue with Google
-            </button>
-            <button type="button" style={styles.socialButton} className="auth-button">
-              <span style={styles.socialBadge}>f</span>
-              Continue with Facebook
-            </button>
-            <button type="button" style={styles.socialButton} className="auth-button">
-              <span style={styles.socialBadge}>A</span>
-              Continue with Apple
             </button>
           </div>
         </>

@@ -43,7 +43,7 @@ function TokenCompartment({
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-[13px] text-white/70">
             <FaCoins className="text-emerald-300" />
-            <span>Muzeer Token</span>
+            <span>Muzeer Coins</span>
           </div>
           <p className="mt-1.5 text-[22px] font-semibold leading-none text-white truncate">
             {(tokenWallet?.balance || 0).toLocaleString()} {tokenWallet?.symbol || 'MUZR'}
@@ -57,6 +57,12 @@ function TokenCompartment({
           {detailsOpen ? 'Less' : 'More'}
         </button>
       </div>
+
+      {tokenWallet?.rewardsPaused && (
+        <div className="mt-2 rounded-md border border-yellow-400/30 bg-yellow-500/10 px-2 py-1.5 text-center text-[10px] text-yellow-200">
+          Earning is currently paused
+        </div>
+      )}
 
       <div className="mt-3 grid grid-cols-3 gap-2 text-[11px]">
         <div className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-white/65">
@@ -76,7 +82,7 @@ function TokenCompartment({
       <div className="mt-1.5 space-y-1">
         <div className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5">
           <div className="flex items-center justify-between text-[10px] text-white/60">
-            <span>Next token</span>
+            <span>Next coin</span>
             <span>{nextTokenProgress.toFixed(0)}%</span>
           </div>
           <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-white/10">
@@ -98,6 +104,20 @@ function TokenCompartment({
       {isLoggedIn && (
         <div className="mt-2 rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-[10px] text-white/65">
           <p className="truncate">{questSummary}</p>
+        </div>
+      )}
+
+      {isLoggedIn && Array.isArray(tokenWallet?.activeEffects) && tokenWallet.activeEffects.length > 0 && (
+        <div className="mt-2 space-y-1">
+          {tokenWallet.activeEffects.map((effect, i) => {
+            const minsLeft = Math.max(0, Math.floor((new Date(effect.expiresAt) - Date.now()) / 60000))
+            return (
+              <div key={i} className="flex items-center justify-between rounded-md border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-[10px]">
+                <span className="text-amber-200">⚡ {effect.label}</span>
+                <span className="text-white/50">{minsLeft}m left</span>
+              </div>
+            )
+          })}
         </div>
       )}
 
@@ -153,7 +173,7 @@ function TokenCompartment({
 
       {!isLoggedIn && (
         <p className="mt-2 rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-center text-[9px] text-white/70">
-          Login to activate listen-to-earn
+          Login to start earning Coins
         </p>
       )}
     </div>
