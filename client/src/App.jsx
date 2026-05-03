@@ -41,9 +41,8 @@ const detectLowPowerDevice = () => {
   const lowCpu = typeof nav.hardwareConcurrency === 'number' && nav.hardwareConcurrency <= 4
   const lowMemory = typeof nav.deviceMemory === 'number' && nav.deviceMemory <= 4
   const saveData = Boolean(connection?.saveData)
-  const reducedMotion = Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)
 
-  return lowCpu || lowMemory || saveData || reducedMotion
+  return lowCpu || lowMemory || saveData
 }
 
 const storageGet = (key) => {
@@ -162,6 +161,9 @@ function App() {
   const dataArrayRef = useRef(null)
   const sourceNodeRef = useRef(null)
   const rafRef = useRef(null)
+  const lastVizFrameRef = useRef(0)
+  const silentAnalyserFramesRef = useRef(0)
+  const forceAnimateRef = useRef(false)
   const searchRevealTimerRef = useRef(null)
   const searchFetchProgressTimerRef = useRef(null)
   const searchFinalizeProgressTimerRef = useRef(null)
@@ -510,8 +512,16 @@ useEffect(() => {
     const updateDuration = () => setDuration(audio.duration);
     const onEnded = () => handleNextTrack();
 
-    const onPlay = () => updatePresence(true);
-    const onPause = () => updatePresence(false);
+    const onPlay = () => {
+      updatePresence(true);
+      setIsPlaying(true);
+      startVisualizer();
+    };
+    const onPause = () => {
+      updatePresence(false);
+      setIsPlaying(false);
+      stopVisualizer();
+    };
     const onSeeked = () => updatePresence(true);
 
     audio.addEventListener('timeupdate', updateTime);
@@ -533,10 +543,21 @@ useEffect(() => {
       if (searchFetchProgressTimerRef.current) clearInterval(searchFetchProgressTimerRef.current);
       if (searchFinalizeProgressTimerRef.current) clearInterval(searchFinalizeProgressTimerRef.current);
       if (searchSmoothProgressTimerRef.current) clearInterval(searchSmoothProgressTimerRef.current);
+    }
+  }, [currentTrack]);
 
+  useEffect(() => {
+    return () => {
       stopVisualizer();
     }
-  }, [currentTrack, loopMode, queue, queueIndex]);
+  }, []);
+
+  // Self-heal visualizer in case loop/track transitions stop RAF unexpectedly.
+  useEffect(() => {
+    if (isPlaying && !rafRef.current) {
+      startVisualizer()
+    }
+  }, [isPlaying, currentTrack?.audio_url, currentTrack?.proxy_url, currentTrack?.webpage_url]);
 
   // --- LOGIC: LOCAL PLAY COUNT ---
   const recordPlay = (track) => {
@@ -652,29 +673,71 @@ useEffect(() => {
     }
   }
 
-  const updateVisualizer = () => {
+  const updateVisualizer = (timestamp = 0) => {
     const analyser = analyserRef.current
     const dataArray = dataArrayRef.current
     const container = wavesRef.current
-    if (!analyser || !dataArray) return
-    analyser.getByteFrequencyData(dataArray)
-    if (container) {
-      const lowBand = Math.max(1, Math.floor(dataArray.length * 0.35))
+
+    // In low power mode, update at ~15 FPS to reduce CPU/GPU load.
+    if (potatoMode && timestamp - lastVizFrameRef.current < 66) {
+      rafRef.current = requestAnimationFrame(updateVisualizer)
+      return
+    }
+    lastVizFrameRef.current = timestamp
+
+    let energy = 0
+    let forceAnimate = false
+
+    if (analyser && dataArray) {
+      analyser.getByteFrequencyData(dataArray)
+      const lowBand = Math.max(1, Math.floor(dataArray.length * (potatoMode ? 0.2 : 0.35)))
       let sum = 0
       for (let i = 0; i < lowBand; i += 1) sum += dataArray[i]
-      const energy = sum / (lowBand * 255)
+      const analyserEnergy = sum / (lowBand * 255)
+
+      // Some TV browsers expose analyser but keep returning near-zero data.
+      if (isPlaying && analyserEnergy < 0.01) {
+        silentAnalyserFramesRef.current += 1
+      } else {
+        silentAnalyserFramesRef.current = 0
+      }
+
+      if (silentAnalyserFramesRef.current > 20 && isPlaying) {
+        const t = audioRef.current?.currentTime || (timestamp / 1000)
+        const vol = audioRef.current?.volume ?? 0.5
+        const pulse = 0.16 + Math.abs(Math.sin(t * 3.2)) * 0.5
+        energy = pulse * Math.max(0.35, vol)
+        forceAnimate = true
+      } else {
+        energy = analyserEnergy
+      }
+    } else {
+      // Fallback for browsers where MediaElementSource/Analyser is blocked.
+      const t = audioRef.current?.currentTime || (timestamp / 1000)
+      const vol = audioRef.current?.volume ?? 0.5
+      const pulse = 0.16 + Math.abs(Math.sin(t * 3.2)) * 0.5
+      energy = isPlaying ? pulse * Math.max(0.35, vol) : 0
+      forceAnimate = true
+    }
+
+    if (container) {
       container.style.setProperty('--hz-energy', energy.toFixed(3))
+      const scale = 0.8 + (energy * 0.35)
+      const opacity = 0.18 + (energy * 0.32)
+      container.style.transform = `translate(-50%, -50%) scale(${scale.toFixed(3)})`
+      container.style.opacity = opacity.toFixed(3)
+
+      if (forceAnimate !== forceAnimateRef.current) {
+        container.classList.toggle('hz-force-animate', forceAnimate)
+        forceAnimateRef.current = forceAnimate
+      }
+
       if (ambienceRef.current) ambienceRef.current.style.setProperty('--hz-energy', energy.toFixed(3))
     }
     rafRef.current = requestAnimationFrame(updateVisualizer)
   }
 
   const startVisualizer = async () => {
-    if (potatoMode) {
-      stopVisualizer()
-      return
-    }
-
     try {
       setupAudioGraph()
       if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
@@ -683,7 +746,7 @@ useEffect(() => {
     } catch (err) {
       console.warn('Audio context resume failed:', err)
     } finally {
-      if (!rafRef.current && analyserRef.current) {
+      if (!rafRef.current) {
         rafRef.current = requestAnimationFrame(updateVisualizer)
       }
     }
@@ -695,16 +758,27 @@ useEffect(() => {
       rafRef.current = null
     }
     const container = wavesRef.current
-    if (container) container.style.setProperty('--hz-energy', '0')
+    if (container) {
+      container.style.setProperty('--hz-energy', '0')
+      container.style.transform = 'translate(-50%, -50%) scale(0.8)'
+      container.style.opacity = '0.2'
+      container.classList.remove('hz-force-animate')
+    }
     if (ambienceRef.current) ambienceRef.current.style.setProperty('--hz-energy', '0')
+    silentAnalyserFramesRef.current = 0
+    forceAnimateRef.current = false
   }
 
   useEffect(() => {
     storageSet('muzeer-potato-mode', potatoMode ? '1' : '0')
-    if (potatoMode) {
+
+    // Keep visualizer active in potato mode; only stop when playback is stopped.
+    if (!isPlaying) {
       stopVisualizer()
+    } else if (!rafRef.current) {
+      startVisualizer()
     }
-  }, [potatoMode])
+  }, [potatoMode, isPlaying])
 
   const playTrack = async (track, isNewPlay = true) => {
     if (audioRef.current) {
@@ -780,9 +854,15 @@ useEffect(() => {
       setIsPlaying(false)
       stopVisualizer()
     } else {
-      await startVisualizer()
-      audioRef.current.play().catch(e => console.log("Playback error:", e))
-      setIsPlaying(true)
+      try {
+        await audioRef.current.play()
+        setIsPlaying(true)
+        startVisualizer()
+      } catch (e) {
+        console.log("Playback error:", e)
+        setIsPlaying(false)
+        stopVisualizer()
+      }
     }
   }
 
@@ -1201,19 +1281,20 @@ useEffect(() => {
             <div className="absolute -left-32 top-10 h-72 w-72 rounded-full blur-[120px]" style={{ backgroundColor: accentEnd, opacity: 0.3 }} />
             <div className="absolute right-0 top-1/3 h-72 w-72 rounded-full blur-[140px]" style={{ backgroundColor: accentStart, opacity: 0.25 }} />
             <div className="absolute bottom-0 left-1/4 h-80 w-80 rounded-full blur-[160px]" style={{ backgroundColor: speakerGlow, opacity: 0.2 }} />
-            <div ref={wavesRef} className={`hz-waves hz-liquid ${isPlaying ? 'is-playing' : 'is-paused'}`} aria-hidden="true">
-              <div className="hz-spikes" aria-hidden="true" />
-              <div className="speaker" aria-hidden="true">
-                <div className="speaker__rim" />
-                <div className="speaker__cone" />
-                <div className="speaker__cap" />
-                <div className="speaker__ring speaker__ring--outer" />
-                <div className="speaker__ring speaker__ring--mid" />
-                <div className="speaker__ring speaker__ring--inner" />
-              </div>
-            </div>
           </>
         )}
+
+        <div ref={wavesRef} className={`hz-waves hz-liquid ${potatoMode ? 'hz-lite' : ''} ${isPlaying ? 'is-playing' : 'is-paused'}`} aria-hidden="true">
+          <div className="hz-spikes" aria-hidden="true" />
+          <div className="speaker" aria-hidden="true">
+            <div className="speaker__rim" />
+            <div className="speaker__cone" />
+            <div className="speaker__cap" />
+            <div className="speaker__ring speaker__ring--outer" />
+            <div className="speaker__ring speaker__ring--mid" />
+            <div className="speaker__ring speaker__ring--inner" />
+          </div>
+        </div>
       </div>
 
       <div className="app-content">

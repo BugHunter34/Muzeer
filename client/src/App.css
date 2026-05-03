@@ -385,6 +385,43 @@ button {
   transition: none !important;
 }
 
+/* Keep visualizer visible in low-power mode, but make it much cheaper to render. */
+.app-shell.potato-mode .hz-waves,
+.hz-waves.hz-lite {
+  filter: none !important;
+  width: clamp(180px, 42vw, 420px);
+  height: clamp(180px, 42vw, 420px);
+  opacity: calc(0.22 + (var(--hz-power) * 0.26));
+}
+
+.app-shell.potato-mode .hz-spikes,
+.hz-waves.hz-lite .hz-spikes,
+.app-shell.potato-mode .speaker__ring,
+.hz-waves.hz-lite .speaker__ring {
+  display: none !important;
+}
+
+.app-shell.potato-mode .speaker,
+.hz-waves.hz-lite .speaker {
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6), inset 0 0 24px rgba(0, 0, 0, 0.45);
+}
+
+@keyframes hz-force-pulse {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(0.86);
+    opacity: 0.26;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.03);
+    opacity: 0.52;
+  }
+}
+
+.hz-waves.hz-force-animate {
+  animation: hz-force-pulse 900ms ease-in-out infinite !important;
+}
+
 .player-toggle {
   position: relative;
   z-index: 0;
