@@ -279,6 +279,106 @@ button {
   text-transform: uppercase;
 }
 
+.text-cutout-mode :where(
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  p:not(:has(svg)),
+  span:not(:has(svg)),
+  a,
+  li,
+  strong,
+  em,
+  small,
+  label,
+  th,
+  td,
+  dt,
+  dd,
+  figcaption,
+  blockquote
+) {
+  color: transparent !important;
+  -webkit-text-fill-color: transparent;
+  background-image:
+    linear-gradient(
+      110deg,
+      color-mix(in srgb, var(--accent-start) 80%, #fff 20%) 0%,
+      color-mix(in srgb, var(--speaker-glow) 72%, #fff 28%) 48%,
+      color-mix(in srgb, var(--accent-end) 80%, #fff 20%) 100%
+    );
+  background-size: 180% 180%;
+  background-position: center;
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: saturate(calc(1 + (var(--hz-energy, 0) * 0.65)));
+  transition: filter 220ms ease;
+  animation: text-cutout-orbit 14s linear infinite, text-cutout-hue 12s ease-in-out infinite;
+  will-change: background-position, filter;
+}
+
+.brand-title--cutout {
+  filter: saturate(calc(1.15 + (var(--hz-energy, 0) * 0.8)));
+}
+
+.app-shell.potato-mode.text-cutout-mode :where(
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  p:not(:has(svg)),
+  span:not(:has(svg)),
+  a,
+  li,
+  strong,
+  em,
+  small,
+  label,
+  th,
+  td,
+  dt,
+  dd,
+  figcaption,
+  blockquote
+) {
+  animation: none;
+}
+
+@supports not ((-webkit-background-clip: text) or (background-clip: text)) {
+  .text-cutout-mode :where(
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6,
+    p:not(:has(svg)),
+    span:not(:has(svg)),
+    a,
+    li,
+    strong,
+    em,
+    small,
+    label,
+    th,
+    td,
+    dt,
+    dd,
+    figcaption,
+    blockquote
+  ) {
+    color: color-mix(in srgb, var(--accent-start) 55%, #ffffff 45%) !important;
+    -webkit-text-fill-color: initial;
+    background-image: none;
+    filter: none;
+  }
+}
+
 .brand-mark {
   font-family: "Cinzel", "Space Grotesk", sans-serif;
   box-shadow: 0 0 18px color-mix(in srgb, var(--accent-end) 50%, transparent);
@@ -590,4 +690,68 @@ button {
     opacity: 0.56;
     transform: scale(1.08);
   }
+}
+
+@keyframes text-cutout-orbit {
+  0% {
+    background-position: 16% 42%;
+  }
+  25% {
+    background-position: 62% 18%;
+  }
+  50% {
+    background-position: 84% 58%;
+  }
+  75% {
+    background-position: 38% 82%;
+  }
+  100% {
+    background-position: 16% 42%;
+  }
+}
+
+@keyframes text-cutout-hue {
+  0% {
+    filter: saturate(calc(1 + (var(--hz-energy, 0) * 0.65))) hue-rotate(0deg);
+  }
+  50% {
+    filter: saturate(calc(1.1 + (var(--hz-energy, 0) * 0.8))) hue-rotate(7deg);
+  }
+  100% {
+    filter: saturate(calc(1 + (var(--hz-energy, 0) * 0.65))) hue-rotate(0deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .text-cutout-mode :where(
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6,
+    p:not(:has(svg)),
+    span:not(:has(svg)),
+    a,
+    li,
+    strong,
+    em,
+    small,
+    label,
+    th,
+    td,
+    dt,
+    dd,
+    figcaption,
+    blockquote
+  ) {
+    animation: none;
+  }
+}
+
+.text-cutout-mode :where(svg) {
+  -webkit-text-fill-color: initial !important;
+  background-image: none !important;
+  filter: none !important;
+  animation: none !important;
 }

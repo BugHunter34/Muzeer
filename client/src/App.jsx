@@ -71,6 +71,8 @@ const storageRemove = (key) => {
   }
 }
 
+const PLAYER_STATE_KEY = 'muzeer-player-state'
+
 const DEFAULT_PLAYLISTS = [
   { id: 'daily-mix-1', name: 'Daily Mix 1', tracks: [] },
   { id: 'chill-focus', name: 'Chill Focus', tracks: [] }
@@ -161,6 +163,12 @@ function App() {
     if (saved === '0') return false
     return detectLowPowerDevice()
   })
+  const [textCutoutMode, setTextCutoutMode] = useState(() => {
+    if (typeof window === 'undefined') return true
+    const saved = storageGet('muzeer-text-cutout-mode')
+    if (saved === '0') return false
+    return true
+  })
 
   // --- Playlist & Queue State ---
   const [playlists, setPlaylists] = useState(DEFAULT_PLAYLISTS)
@@ -181,8 +189,16 @@ function App() {
   // --- Audio Player State ---
   const audioRef = useRef(null);
   if (!audioRef.current) {
-    audioRef.current = new Audio();
-    audioRef.current.crossOrigin = "anonymous";
+    const sharedAudio = typeof window !== 'undefined' ? window.__muzeerAudio : null
+    if (sharedAudio) {
+      audioRef.current = sharedAudio
+    } else {
+      audioRef.current = new Audio();
+      audioRef.current.crossOrigin = "anonymous";
+      if (typeof window !== 'undefined') {
+        window.__muzeerAudio = audioRef.current
+      }
+    }
   }
   const ambienceRef = useRef(null)
   const wavesRef = useRef(null)
@@ -198,6 +214,7 @@ function App() {
   const searchFetchProgressTimerRef = useRef(null)
   const searchFinalizeProgressTimerRef = useRef(null)
   const searchSmoothProgressTimerRef = useRef(null)
+  const tokenTickAtRef = useRef(Date.now())
   const loopModeRef = useRef(0)
   const queueRef = useRef([])
   const queueIndexRef = useRef(0)
@@ -245,6 +262,66 @@ function App() {
     currentTrackRef.current = currentTrack
   }, [currentTrack])
 
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) return
+
+    const raw = storageGet(PLAYER_STATE_KEY)
+    if (!raw) return
+
+    try {
+      const saved = JSON.parse(raw)
+      if (!saved || !saved.title || saved.title === 'Select a track') return
+
+      setCurrentTrack((prev) => ({
+        ...prev,
+        ...sanitizeTrackForPlayback(saved)
+      }))
+
+      applyThemeFromImage(saved.thumbnail, saved)
+
+      if (typeof saved.currentTime === 'number' && Number.isFinite(saved.currentTime)) {
+        setCurrentTime(saved.currentTime)
+      }
+      if (typeof audio.duration === 'number' && Number.isFinite(audio.duration)) {
+        setDuration(audio.duration)
+      }
+
+      if (typeof saved.playbackSource === 'string') {
+        setPlaybackSource(saved.playbackSource === 'playlist' ? 'playlist' : 'queue')
+      }
+      if (typeof saved.queueIndex === 'number' && Number.isFinite(saved.queueIndex)) {
+        setQueueIndex(Math.max(0, Math.floor(saved.queueIndex)))
+      }
+      if (typeof saved.playlistPlaybackIndex === 'number' && Number.isFinite(saved.playlistPlaybackIndex)) {
+        setPlaylistPlaybackIndex(Math.max(0, Math.floor(saved.playlistPlaybackIndex)))
+      }
+
+      const activelyPlaying = Boolean(audio.src && !audio.paused)
+      setIsPlaying(activelyPlaying)
+    } catch {
+      // ignore corrupted player snapshot
+    }
+  }, [])
+
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) return
+
+    const isTrackSelected = currentTrack?.title && currentTrack.title !== 'Select a track'
+    if (!isTrackSelected) return
+
+    storageSet(PLAYER_STATE_KEY, JSON.stringify({
+      ...currentTrack,
+      currentTime: audio.currentTime || 0,
+      isPlaying: !audio.paused,
+      volume: audio.volume,
+      playbackSource,
+      queueIndex,
+      playlistPlaybackIndex
+    }))
+  }, [currentTrack, isPlaying, playbackSource, queueIndex, playlistPlaybackIndex])
+
 useEffect(() => {
   if (!user) return;
 
@@ -289,19 +366,31 @@ useEffect(() => {
 
   // --- Current listen HEARTBEAT ---
   useEffect(() => {
-    if (!user || !isPlaying || !currentTrack.title) return;
+    if (!user || !isPlaying) return;
+
+    tokenTickAtRef.current = Date.now()
 
     const presenceSync = setInterval(async () => {
       try {
+        const liveTrack = currentTrackRef.current
+        const audio = audioRef.current
+
+        if (!liveTrack?.title || liveTrack.title === 'Select a track') return
+        if (!audio || audio.paused) return
+
+        const now = Date.now()
+        const elapsedSeconds = Math.max(5, Math.min(15, Math.round((now - tokenTickAtRef.current) / 1000) || 10))
+        tokenTickAtRef.current = now
+
         await fetch(`${API_BASE_URL}/me/presence`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
           body: JSON.stringify({
-            title: currentTrack.title,
-            artist: currentTrack.artist,
-            webpage_url: currentTrack.webpage_url,
-            currentTime: audioRef.current.currentTime
+            title: liveTrack.title,
+            artist: liveTrack.artist || 'Unknown artist',
+            webpage_url: liveTrack.webpage_url,
+            currentTime: audio.currentTime
           })
         });
 
@@ -310,10 +399,10 @@ useEffect(() => {
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
           body: JSON.stringify({
-            title: currentTrack.title,
-            artist: currentTrack.artist,
+            title: liveTrack.title,
+            artist: liveTrack.artist || 'Unknown artist',
             isPlaying: true,
-            listenedSeconds: 10
+            listenedSeconds: elapsedSeconds
           })
         });
 
@@ -359,7 +448,7 @@ useEffect(() => {
     }, 10000);
 
     return () => clearInterval(presenceSync);
-  }, [user, isPlaying, currentTrack]);
+  }, [user, isPlaying]);
 
   const loadTokenWallet = async () => {
     if (!user) return;
@@ -628,6 +717,11 @@ useEffect(() => {
     audio.addEventListener('pause', onPause);
     audio.addEventListener('seeked', onSeeked);
 
+    // Resync UI immediately in case metadata/events fired before listeners were attached.
+    updateTime();
+    updateDuration();
+    setIsPlaying(Boolean(audio.src && !audio.paused));
+
     return () => {
       audio.removeEventListener('timeupdate', updateTime);
       audio.removeEventListener('loadedmetadata', updateDuration);
@@ -760,9 +854,28 @@ useEffect(() => {
   }
 
   const setupAudioGraph = () => {
-    if (audioContextRef.current) return;
     const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextConstructor) return;
+
+    const audioEl = audioRef.current
+    if (!audioEl) return
+
+    const sharedGraph = typeof window !== 'undefined' ? window.__muzeerAudioGraph : null
+    if (
+      sharedGraph &&
+      sharedGraph.audio === audioEl &&
+      sharedGraph.ctx &&
+      sharedGraph.analyser &&
+      sharedGraph.dataArray
+    ) {
+      audioContextRef.current = sharedGraph.ctx
+      analyserRef.current = sharedGraph.analyser
+      sourceNodeRef.current = sharedGraph.source || null
+      dataArrayRef.current = sharedGraph.dataArray
+      return
+    }
+
+    if (audioContextRef.current && analyserRef.current && dataArrayRef.current) return;
 
     try {
       const ctx = new AudioContextConstructor();
@@ -771,11 +884,12 @@ useEffect(() => {
 
       let source = sourceNodeRef.current;
       if (!source) {
-        source = ctx.createMediaElementSource(audioRef.current);
+        source = ctx.createMediaElementSource(audioEl);
         sourceNodeRef.current = source;
       }
 
       try { source.disconnect(); } catch (e) { }
+      try { analyser.disconnect(); } catch (e) { }
 
       source.connect(analyser);
       analyser.connect(ctx.destination);
@@ -783,6 +897,16 @@ useEffect(() => {
       audioContextRef.current = ctx;
       analyserRef.current = analyser;
       dataArrayRef.current = new Uint8Array(analyser.frequencyBinCount);
+
+      if (typeof window !== 'undefined') {
+        window.__muzeerAudioGraph = {
+          audio: audioEl,
+          ctx,
+          analyser,
+          source,
+          dataArray: dataArrayRef.current,
+        }
+      }
     } catch (err) {
       console.warn('Audio graph setup safely skipped:', err.message);
     }
@@ -894,6 +1018,10 @@ useEffect(() => {
       startVisualizer()
     }
   }, [potatoMode, isPlaying])
+
+  useEffect(() => {
+    storageSet('muzeer-text-cutout-mode', textCutoutMode ? '1' : '0')
+  }, [textCutoutMode])
 
   const playTrack = async (trackInput, isNewPlay = true) => {
     let track = sanitizeTrackForPlayback(trackInput)
@@ -1062,6 +1190,12 @@ useEffect(() => {
   useEffect(() => {
     const pendingTrackRaw = storageGet('pendingTrack')
     if (!pendingTrackRaw) return
+
+    // If shared player is already active, do not force replay pendingTrack.
+    if (audioRef.current?.src && !audioRef.current?.paused) {
+      storageRemove('pendingTrack')
+      return
+    }
 
     try {
       const pendingTrack = JSON.parse(pendingTrackRaw)
@@ -1539,7 +1673,7 @@ useEffect(() => {
   }
 
   return (
-    <div className={`app-shell h-screen overflow-hidden text-[color:var(--ink)] ${potatoMode ? 'potato-mode' : ''}`} style={themeVars}>
+    <div className={`app-shell h-screen overflow-hidden text-[color:var(--ink)] ${potatoMode ? 'potato-mode' : ''} ${textCutoutMode ? 'text-cutout-mode' : ''}`} style={themeVars}>
       {/* Background Ambience (Pinkwave) */}
       <div ref={ambienceRef} className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
         {potatoMode ? (
@@ -1579,7 +1713,7 @@ useEffect(() => {
                   className="h-full w-full object-cover"
                 />
               </div>
-              <span className="brand-title font-bold tracking-wide text-lg bg-clip-text text-transparent bg-gradient-to-r from-emerald-300 to-amber-200">
+              <span className="brand-title brand-title--cutout font-bold tracking-wide text-lg">
                 {appName}
               </span>
             </div>
@@ -1666,7 +1800,7 @@ useEffect(() => {
 
               {themeOpen && (
                 <div className="absolute right-0 top-full mt-3 w-64 rounded-2xl border border-white/10 bg-[color:var(--panel)]/95 p-4 text-xs shadow-[0_18px_40px_rgba(0,0,0,0.4)] backdrop-blur">
-                  <p className="text-[10px] uppercase tracking-[0.3em] text-white/40">Theme</p>
+                  <p className="flex items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-white/40"><FaSlidersH className="text-[11px]" /> Theme</p>
                   <div className="mt-3 space-y-3">
                     <label className="flex items-center justify-between gap-3">
                       <span className="text-white/70">Potato mode</span>
@@ -1675,6 +1809,15 @@ useEffect(() => {
                         className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.2em] transition ${potatoMode ? 'border-emerald-300/60 bg-emerald-300/20 text-emerald-200' : 'border-white/20 bg-white/5 text-white/60'}`}
                       >
                         {potatoMode ? 'On' : 'Off'}
+                      </button>
+                    </label>
+                    <label className="flex items-center justify-between gap-3">
+                      <span className="text-white/70">Text cutout mode</span>
+                      <button
+                        onClick={() => setTextCutoutMode((prev) => !prev)}
+                        className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.2em] transition ${textCutoutMode ? 'border-fuchsia-300/60 bg-fuchsia-300/20 text-fuchsia-200' : 'border-white/20 bg-white/5 text-white/60'}`}
+                      >
+                        {textCutoutMode ? 'On' : 'Off'}
                       </button>
                     </label>
                     <label className="flex items-center justify-between gap-3">
@@ -1765,7 +1908,7 @@ useEffect(() => {
 
                 <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-2.5">
                   <div className="mb-2 flex items-center justify-between gap-2">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-white/45">Import Playlist</p>
+                    <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-white/45"><FaCloudDownloadAlt className="text-[11px]" /> Import Playlist</p>
                     <FaCloudDownloadAlt className="text-[12px] text-white/45" />
                   </div>
 
@@ -1796,7 +1939,7 @@ useEffect(() => {
                           handleImportPlaylist()
                         }
                       }}
-                      placeholder={importSource === 'youtube' ? 'YouTube playlist URL' : 'Spotify playlist URL'}
+                      placeholder="PAste URL"
                       className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-white placeholder:text-white/30 outline-none focus:border-pink-500/50"
                     />
                   </div>
@@ -2133,7 +2276,8 @@ useEffect(() => {
 
             <div className="rounded-3xl border border-white/10 bg-[color:var(--panel)]/80 p-5 flex-1 flex flex-col overflow-hidden">
               <div className="flex items-center justify-between mb-2">
-                <p className="text-xs uppercase tracking-[0.3em] text-[color:var(--muted)]">
+                <p className="flex items-center gap-2 text-xs uppercase tracking-[0.3em] text-[color:var(--muted)]">
+                  <MdQueueMusic className="text-[14px]" />
                   {rightPanelMode === 'playlist' ? (activePlaylist?.name || 'Playlist') : 'Queue'}
                 </p>
                 <span className="text-[10px] text-white/30">
@@ -2144,14 +2288,16 @@ useEffect(() => {
               <div className="mb-2 flex items-center gap-2">
                 <button
                   onClick={() => setRightPanelMode('queue')}
-                  className={`rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition ${rightPanelMode === 'queue' ? 'bg-white/15 text-white' : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'}`}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition ${rightPanelMode === 'queue' ? 'bg-white/15 text-white' : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'}`}
                 >
+                  <MdQueueMusic className="text-[12px]" />
                   Queue
                 </button>
                 <button
                   onClick={() => setRightPanelMode('playlist')}
-                  className={`rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition ${rightPanelMode === 'playlist' ? 'bg-pink-500/25 text-pink-100' : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'}`}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition ${rightPanelMode === 'playlist' ? 'bg-pink-500/25 text-pink-100' : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'}`}
                 >
+                  <FaCloudDownloadAlt className="text-[11px]" />
                   Playlist
                 </button>
               </div>
