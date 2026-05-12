@@ -138,6 +138,7 @@ app.use('/users', usersRouter);
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/bot', require('./routes/bot'));
 app.use('/api/token', require('./routes/token'));
+app.use('/api/media', require('./routes/media'));
 
 // Auth router
 app.use('/api/auth', authRoutes);
