@@ -1009,129 +1009,124 @@ function App() {
   const activePlaylist =
     playlists.find((playlist) => playlist.id === activePlaylistId) || null;
 
-  const handleSearch = async (e) => {
-    e.preventDefault();
-    if (!query.trim()) return;
-    setLoading(true);
-    setSearchResults([]);
-    setVisibleSearchCount(0);
-    setSearchProgress(0);
-    setSearchProgressTarget(0);
-    setIsSearchResultsOpen(true);
-
-    if (searchRevealTimerRef.current)
-      clearInterval(searchRevealTimerRef.current);
-    if (searchFetchProgressTimerRef.current)
-      clearInterval(searchFetchProgressTimerRef.current);
-    if (searchFinalizeProgressTimerRef.current)
-      clearInterval(searchFinalizeProgressTimerRef.current);
-
-    searchFetchProgressTimerRef.current = setInterval(() => {
-      setSearchProgressTarget((prev) => (prev >= 65 ? prev : prev + 2.5));
-    }, 120);
-
-    try {
-      const response = await fetch(`${MEDIA_API_BASE_URL}/search`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query }),
-      });
-      const data = await response.json();
-
-      const normalizedResults = Array.isArray(data)
-        ? data
-        : Array.isArray(data?.results)
-          ? data.results
-          : [];
-
-      await fetch(`${API_BASE_URL}/media/cache`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify({
-          tracks: normalizedResults.map((track) => ({
-            ...track,
-            searchQuery: query,
-          })),
-        }),
-      });
-
-      setSearchResults(normalizedResults);
-      if (!response.ok) throw new Error(data.error);
-
-      const normalizedResults = Array.isArray(data)
-        ? data
-        : Array.isArray(data?.results)
-          ? data.results
-          : Array.isArray(data?.items)
-            ? data.items
-            : Array.isArray(data?.tracks)
-              ? data.tracks
-              : data?.title ||
-                  data?.webpage_url ||
-                  data?.audio_url ||
-                  data?.proxy_url
-                ? [data]
-                : [];
-
-      if (searchFetchProgressTimerRef.current) {
-        clearInterval(searchFetchProgressTimerRef.current);
-        searchFetchProgressTimerRef.current = null;
-      }
-
-      setSearchResults(normalizedResults);
-      setIsSearchResultsOpen(normalizedResults.length > 0);
-
-      if (normalizedResults.length > 0) {
-        setSearchProgressTarget((prev) => Math.max(prev, 72));
-        setVisibleSearchCount(1);
-
-        const finalizeStart = Date.now();
-        const finalizeDuration = Math.max(700, normalizedResults.length * 120);
-        searchFinalizeProgressTimerRef.current = setInterval(() => {
-          const elapsed = Date.now() - finalizeStart;
-          const ratio = Math.min(1, elapsed / finalizeDuration);
-          const target = 72 + ratio * 28;
-          setSearchProgressTarget((prevTarget) => Math.max(prevTarget, target));
-          if (ratio >= 1) {
-            clearInterval(searchFinalizeProgressTimerRef.current);
-            searchFinalizeProgressTimerRef.current = null;
-          }
-        }, 40);
-
-        searchRevealTimerRef.current = setInterval(() => {
-          setVisibleSearchCount((prev) => {
-            const next = prev + 1;
-            if (next >= normalizedResults.length) {
-              clearInterval(searchRevealTimerRef.current);
-              searchRevealTimerRef.current = null;
-              if (searchFinalizeProgressTimerRef.current) {
-                clearInterval(searchFinalizeProgressTimerRef.current);
-                searchFinalizeProgressTimerRef.current = null;
-              }
-              setSearchProgressTarget(100);
-              return normalizedResults.length;
-            }
-            return next;
-          });
-        }, 90);
-      } else {
-        setSearchProgressTarget(100);
-      }
-    } catch (err) {
-      console.error(err);
+    const handleSearch = async (e) => {
+      e.preventDefault();
+      if (!query.trim()) return;
+      setLoading(true);
+      setSearchResults([]);
+      setVisibleSearchCount(0);
+      setSearchProgress(0);
+      setSearchProgressTarget(0);
+      setIsSearchResultsOpen(true);
+  
+      if (searchRevealTimerRef.current)
+        clearInterval(searchRevealTimerRef.current);
       if (searchFetchProgressTimerRef.current)
         clearInterval(searchFetchProgressTimerRef.current);
       if (searchFinalizeProgressTimerRef.current)
         clearInterval(searchFinalizeProgressTimerRef.current);
-      setSearchProgressTarget(0);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  
+      searchFetchProgressTimerRef.current = setInterval(() => {
+        setSearchProgressTarget((prev) => (prev >= 65 ? prev : prev + 2.5));
+      }, 120);
+  
+      try {
+        const response = await fetch(`${MEDIA_API_BASE_URL}/search`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query }),
+        });
+        const data = await response.json();
+  
+        if (!response.ok) throw new Error(data.error || "Search failed");
+  
+        // 1. Sjednocená deklarace proměnné normalizedResults
+        const normalizedResults = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.results)
+            ? data.results
+            : Array.isArray(data?.items)
+              ? data.items
+              : Array.isArray(data?.tracks)
+                ? data.tracks
+                : data?.title ||
+                    data?.webpage_url ||
+                    data?.audio_url ||
+                    data?.proxy_url
+                  ? [data]
+                  : [];
+  
+        // 2. Volání cache s opravenými daty
+        await fetch(`${API_BASE_URL}/media/cache`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify({
+            tracks: normalizedResults.map((track) => ({
+              ...track,
+              searchQuery: query,
+            })),
+          }),
+        }).catch((err) => console.error("Cache update failed:", err));
+  
+        if (searchFetchProgressTimerRef.current) {
+          clearInterval(searchFetchProgressTimerRef.current);
+          searchFetchProgressTimerRef.current = null;
+        }
+  
+        // 3. Uložení výsledků do stavu aplikace
+        setSearchResults(normalizedResults);
+        setIsSearchResultsOpen(normalizedResults.length > 0);
+  
+        if (normalizedResults.length > 0) {
+          setSearchProgressTarget((prev) => Math.max(prev, 72));
+          setVisibleSearchCount(1);
+  
+          const finalizeStart = Date.now();
+          const finalizeDuration = Math.max(700, normalizedResults.length * 120);
+          searchFinalizeProgressTimerRef.current = setInterval(() => {
+            const elapsed = Date.now() - finalizeStart;
+            const ratio = Math.min(1, elapsed / finalizeDuration);
+            const target = 72 + ratio * 28;
+            setSearchProgressTarget((prevTarget) => Math.max(prevTarget, target));
+            if (ratio >= 1) {
+              clearInterval(searchFinalizeProgressTimerRef.current);
+              searchFinalizeProgressTimerRef.current = null;
+            }
+          }, 40);
+  
+          searchRevealTimerRef.current = setInterval(() => {
+            setVisibleSearchCount((prev) => {
+              const next = prev + 1;
+              if (next >= normalizedResults.length) {
+                clearInterval(searchRevealTimerRef.current);
+                searchRevealTimerRef.current = null;
+                if (searchFinalizeProgressTimerRef.current) {
+                  clearInterval(searchFinalizeProgressTimerRef.current);
+                  searchFinalizeProgressTimerRef.current = null;
+                }
+                setSearchProgressTarget(100);
+                return normalizedResults.length;
+              }
+              return next;
+            });
+          }, 90);
+        } else {
+          setSearchProgressTarget(100);
+        }
+      } catch (err) {
+        console.error(err);
+        if (searchFetchProgressTimerRef.current)
+          clearInterval(searchFetchProgressTimerRef.current);
+        if (searchFinalizeProgressTimerRef.current)
+          clearInterval(searchFinalizeProgressTimerRef.current);
+        setSearchProgressTarget(0);
+      } finally {
+        setLoading(false);
+      }
+    };
   const formatTime = (time) => {
     if (!time || isNaN(time)) return "0:00";
     const minutes = Math.floor(time / 60);
