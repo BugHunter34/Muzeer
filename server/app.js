@@ -139,6 +139,7 @@ app.use('/api/admin', require('./routes/admin'));
 app.use('/api/bot', require('./routes/bot'));
 app.use('/api/token', require('./routes/token'));
 app.use('/api/media', require('./routes/media'));
+app.use('/api/artist', require('./routes/artist'));
 
 // Auth router
 app.use('/api/auth', authRoutes);
