@@ -69,6 +69,15 @@ const detectLowPowerDevice = () => {
   return lowCpu || lowMemory || saveData || reducedMotion;
 };
 
+const formatTime = (time) => {
+  if (!time || isNaN(time)) return "0:00";
+  const minutes = Math.floor(time / 60);
+  const seconds = Math.floor(time % 60);
+  return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
+};
+
+
+
 const DEFAULT_PLAYLISTS = [
   { id: "daily-mix-1", name: "Daily Mix 1", tracks: [] },
   { id: "chill-focus", name: "Chill Focus", tracks: [] },
@@ -1012,78 +1021,49 @@ function App() {
     const handleSearch = async (e) => {
       e.preventDefault();
       if (!query.trim()) return;
+      
       setLoading(true);
       setSearchResults([]);
       setVisibleSearchCount(0);
       setSearchProgress(0);
       setSearchProgressTarget(0);
       setIsSearchResultsOpen(true);
-  
-      if (searchRevealTimerRef.current)
-        clearInterval(searchRevealTimerRef.current);
-      if (searchFetchProgressTimerRef.current)
-        clearInterval(searchFetchProgressTimerRef.current);
-      if (searchFinalizeProgressTimerRef.current)
-        clearInterval(searchFinalizeProgressTimerRef.current);
-  
+    
+      if (searchRevealTimerRef.current) clearInterval(searchRevealTimerRef.current);
+      if (searchFetchProgressTimerRef.current) clearInterval(searchFetchProgressTimerRef.current);
+      if (searchFinalizeProgressTimerRef.current) clearInterval(searchFinalizeProgressTimerRef.current);
+    
       searchFetchProgressTimerRef.current = setInterval(() => {
         setSearchProgressTarget((prev) => (prev >= 65 ? prev : prev + 2.5));
       }, 120);
-  
+    
       try {
-        const response = await fetch(`${MEDIA_API_BASE_URL}/search`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query }),
+        // ZMĚNA: Nyní voláme náš rychlý Node.js server místo přímého volání Pythonu
+        // Metoda je nyní GET a query posíláme v URL
+        const response = await fetch(`${API_BASE_URL}/media/search?q=${encodeURIComponent(query)}`, {
+          method: "GET",
+          credentials: "include", // Udrží session uživatele
         });
+        
         const data = await response.json();
-  
+    
         if (!response.ok) throw new Error(data.error || "Search failed");
-  
-        // 1. Sjednocená deklarace proměnné normalizedResults
-        const normalizedResults = Array.isArray(data)
-          ? data
-          : Array.isArray(data?.results)
-            ? data.results
-            : Array.isArray(data?.items)
-              ? data.items
-              : Array.isArray(data?.tracks)
-                ? data.tracks
-                : data?.title ||
-                    data?.webpage_url ||
-                    data?.audio_url ||
-                    data?.proxy_url
-                  ? [data]
-                  : [];
-  
-        // 2. Volání cache s opravenými daty
-        await fetch(`${API_BASE_URL}/media/cache`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          credentials: "include",
-          body: JSON.stringify({
-            tracks: normalizedResults.map((track) => ({
-              ...track,
-              searchQuery: query,
-            })),
-          }),
-        }).catch((err) => console.error("Cache update failed:", err));
-  
+    
+        // Výsledky nyní chodí bezpečně zabelené uvnitř data.results
+        const normalizedResults = Array.isArray(data.results) ? data.results : Array.isArray(data) ? data : [];
+    
         if (searchFetchProgressTimerRef.current) {
           clearInterval(searchFetchProgressTimerRef.current);
           searchFetchProgressTimerRef.current = null;
         }
-  
-        // 3. Uložení výsledků do stavu aplikace
+    
         setSearchResults(normalizedResults);
         setIsSearchResultsOpen(normalizedResults.length > 0);
-  
+    
         if (normalizedResults.length > 0) {
           setSearchProgressTarget((prev) => Math.max(prev, 72));
           setVisibleSearchCount(1);
-  
+    
           const finalizeStart = Date.now();
           const finalizeDuration = Math.max(700, normalizedResults.length * 120);
           searchFinalizeProgressTimerRef.current = setInterval(() => {
@@ -1096,7 +1076,7 @@ function App() {
               searchFinalizeProgressTimerRef.current = null;
             }
           }, 40);
-  
+    
           searchRevealTimerRef.current = setInterval(() => {
             setVisibleSearchCount((prev) => {
               const next = prev + 1;
@@ -1118,30 +1098,13 @@ function App() {
         }
       } catch (err) {
         console.error(err);
-        if (searchFetchProgressTimerRef.current)
-          clearInterval(searchFetchProgressTimerRef.current);
-        if (searchFinalizeProgressTimerRef.current)
-          clearInterval(searchFinalizeProgressTimerRef.current);
+        if (searchFetchProgressTimerRef.current) clearInterval(searchFetchProgressTimerRef.current);
+        if (searchFinalizeProgressTimerRef.current) clearInterval(searchFinalizeProgressTimerRef.current);
         setSearchProgressTarget(0);
       } finally {
         setLoading(false);
       }
     };
-  const formatTime = (time) => {
-    if (!time || isNaN(time)) return "0:00";
-    const minutes = Math.floor(time / 60);
-    const seconds = Math.floor(time % 60);
-    return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
-  };
-
-  const themePalettes = [
-    ["#3bf0d1", "#ffb454", "#3bf0d1"],
-    ["#8ef3ff", "#ffe08a", "#7be1ff"],
-    ["#9dffe5", "#ff9b6b", "#63f7c6"],
-    ["#b8a1ff", "#ffd6a6", "#9c9bff"],
-    ["#6de2ff", "#ff6f91", "#6de2ff"],
-    ["#c1ff78", "#ffa76a", "#c1ff78"],
-  ];
 
   const clampChannel = (value, min = 25, max = 235) =>
     Math.min(max, Math.max(min, value));

@@ -44,7 +44,6 @@ def to_track_payload(info, fallback_query):
 
     audio_url = info.get("url")
 
-
     base_url = request.host_url.rstrip("/")
     proxy_url = f"{base_url}/api/stream?vid={video_id}"
 
@@ -157,7 +156,6 @@ def api_trending():
         print(f"Trending Error: {e}")
         return jsonify([])
 
-
 @app.route("/api/stream", methods=["GET"])
 def api_stream():
     video_id = request.args.get("vid")
@@ -181,7 +179,6 @@ def api_stream():
 
         if not audio_url: 
             return jsonify({"error": "Could not extract audio"}), 500
-
 
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36", 
