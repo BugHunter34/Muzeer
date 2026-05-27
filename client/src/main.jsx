@@ -6,7 +6,10 @@ import Login from './Login/Login.jsx' // We will create this next
 import Register from './Login/Register.jsx'
 import Profile from './Profile/Profile.jsx'
 import SearchResults from './Search/SearchResults.jsx'
-import AdminAbuse from './Admin/AdminAbuse.jsx' // NEW: Admin dashboard
+import AdminAbuse from './Admin/AdminAbuse.jsx'
+import ArtistProfile from './ArtistProfile/ArtistProfile.jsx';
+
+// NEW: Admin dashboard
 // Remove index.css import here if it's breaking things
 // --- Grab User info from localStorage so we can conditionally render admin routes ---
 let user = null;
@@ -43,6 +46,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/profile" element={<Profile />} />
         <Route path="/search" element={<SearchResults />} />
         <Route path="/admin" element={user?.role === 'admin' || 'owner' ? <AdminAbuse /> : <Navigate to="/" />} />
+        <Route path="/artist/:name" element={<ArtistProfile />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>,

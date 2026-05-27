@@ -1,18 +1,18 @@
-import React, { useEffect, useState } from 'react';
-import { FaPlay, FaSearch } from 'react-icons/fa';
-import { MdQueueMusic } from 'react-icons/md';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { MEDIA_API_BASE_URL } from '../config';
+import React, { useEffect, useState } from "react";
+import { FaPlay, FaSearch } from "react-icons/fa";
+import { MdQueueMusic } from "react-icons/md";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { MEDIA_API_BASE_URL } from "../config";
 
 export default function SearchResults() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialQuery = searchParams.get('q') || '';
+  const initialQuery = searchParams.get("q") || "";
 
   const [query, setQuery] = useState(initialQuery);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   // 1. Udržování vyhledávacího pole synchronizovaného s URL
   useEffect(() => {
@@ -69,16 +69,16 @@ export default function SearchResults() {
 
   const addToQueue = () => {
     if (!result) return;
-    const currentQueue = JSON.parse(localStorage.getItem('queue') || '[]');
+    const currentQueue = JSON.parse(localStorage.getItem("queue") || "[]");
     const newQueue = [...currentQueue, result];
-    localStorage.setItem('queue', JSON.stringify(newQueue));
-    alert('Added to local queue.');
+    localStorage.setItem("queue", JSON.stringify(newQueue));
+    alert("Added to local queue.");
   };
 
   const playInMuzeer = () => {
     if (!result) return;
-    localStorage.setItem('pendingTrack', JSON.stringify(result));
-    navigate('/');
+    localStorage.setItem("pendingTrack", JSON.stringify(result));
+    navigate("/");
   };
 
   return (
@@ -86,25 +86,30 @@ export default function SearchResults() {
       <div className="mx-auto w-full max-w-[1200px] px-4 py-8 sm:px-6">
         <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-xs uppercase tracking-[0.35em] text-white/45">Search</p>
+            <p className="text-xs uppercase tracking-[0.35em] text-white/45">
+              Search
+            </p>
             <h1 className="mt-1 text-3xl font-semibold">Search Results</h1>
           </div>
           <button
-            onClick={() => navigate('/')}
+            onClick={() => navigate("/")}
             className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm transition hover:bg-white/10"
           >
             Back Home
           </button>
         </header>
 
-        <form onSubmit={handleSubmit} className="relative mb-7 flex w-full items-center gap-3 group">
+        <form
+          onSubmit={handleSubmit}
+          className="relative mb-7 flex w-full items-center gap-3 group"
+        >
           <FaSearch className="absolute left-4 text-white/30 group-focus-within:text-pink-500" />
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="w-full rounded-full border border-white/10 bg-white/5 pl-10 pr-4 py-3 text-sm text-white placeholder:text-white/40 focus:border-pink-500/50 focus:outline-none"
-            placeholder={loading ? 'Searching...' : 'Type song name or URL...'}
+            placeholder={loading ? "Searching..." : "Type song name or URL..."}
           />
           <button
             type="submit"
@@ -136,17 +141,30 @@ export default function SearchResults() {
           <section className="rounded-3xl border border-pink-500/20 bg-gradient-to-br from-pink-500/10 via-purple-900/10 to-transparent p-5 sm:p-6">
             <div className="flex flex-col gap-6 md:flex-row md:items-center">
               {result.thumbnail ? (
-                <img src={result.thumbnail} alt="Thumbnail" className="h-40 w-40 rounded-3xl object-cover shadow-[0_10px_40px_rgba(236,72,153,0.3)]" />
+                <img
+                  src={result.thumbnail}
+                  alt="Thumbnail"
+                  className="h-40 w-40 rounded-3xl object-cover shadow-[0_10px_40px_rgba(236,72,153,0.3)]"
+                />
               ) : (
                 <div className="h-40 w-40 rounded-3xl bg-gradient-to-br from-pink-500 to-rose-500" />
               )}
 
               <div className="flex-1">
                 <div className="mb-2 flex items-center gap-2">
-                  <span className="rounded bg-pink-500/20 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-pink-300">Top Result</span>
+                  <span className="rounded bg-pink-500/20 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-pink-300">
+                    Top Result
+                  </span>
                 </div>
                 <h2 className="text-2xl font-bold">{result.title}</h2>
-                <p className="mb-4 mt-1 text-sm text-white/60">{result.artist}</p>
+                <p
+                  onClick={() =>
+                    navigate(`/artist/${encodeURIComponent(result.artist)}`)
+                  }
+                  className="mb-4 mt-1 text-sm text-white/60 cursor-pointer hover:text-pink-400 hover:underline inline-block"
+                >
+                  {result.artist}
+                </p>
 
                 <div className="flex flex-wrap gap-3">
                   <button

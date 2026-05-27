@@ -1717,11 +1717,20 @@ function App() {
                             </button>
                           )}
 
-                          <div className="min-w-0 flex-1 pr-16 md:pr-24 xl:pr-28">
-                            <p className="truncate text-lg font-semibold">
+                          <div className="min-w-0 flex-1 pr-16 md:pr-24 xl:pr-28 flex flex-col items-start">
+                            <p className="truncate text-lg font-semibold w-full">
                               {result.title || "Unknown title"}
                             </p>
-                            <p className="mt-1 truncate text-sm text-white/60">
+                            <p
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (result.artist && result.artist !== "Unknown artist" && result.artist !== "...") {
+                                  navigate(`/artist/${encodeURIComponent(result.artist)}`);
+                                }
+                              }}
+                              className="mt-1 truncate text-sm text-white/60 cursor-pointer hover:text-pink-400 hover:underline transition-colors max-w-full"
+                              title={`Zobrazit profil interpreta ${result.artist}`}
+                            >
                               {result.artist || "Unknown artist"}
                             </p>
                           </div>
@@ -1790,11 +1799,20 @@ function App() {
                         </div>
                       </div>
 
-                      <div className="min-w-0 flex-1 overflow-hidden pr-10 md:pr-12 2xl:pr-16">
-                        <p className="text-sm font-semibold truncate">
+                      <div className="min-w-0 flex-1 overflow-hidden pr-10 md:pr-12 2xl:pr-16 flex flex-col items-start">
+                        <p className="text-sm font-semibold truncate w-full">
                           {song.title}
                         </p>
-                        <p className="text-xs text-[color:var(--muted)] truncate">
+                        <p
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (song.artist && song.artist !== "Unknown Artist" && song.artist !== "...") {
+                              navigate(`/artist/${encodeURIComponent(song.artist)}`);
+                            }
+                          }}
+                          className="text-xs text-[color:var(--muted)] truncate cursor-pointer hover:text-pink-400 hover:underline transition-colors max-w-full"
+                          title={`Zobrazit profil interpreta ${song.artist}`}
+                        >
                           {song.artist}
                         </p>
                       </div>
@@ -1890,11 +1908,20 @@ function App() {
                           <FaPlay className="text-white" />
                         </button>
                       </div>
-                      <div className="flex-1 overflow-hidden pr-10 md:pr-12 2xl:pr-16">
-                        <p className="text-sm font-semibold truncate">
+                      <div className="flex-1 overflow-hidden pr-10 md:pr-12 2xl:pr-16 flex flex-col items-start">
+                        <p className="text-sm font-semibold truncate w-full">
                           {item.title}
                         </p>
-                        <p className="text-xs text-[color:var(--muted)] truncate">
+                        <p
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (item.artist && item.artist !== "Unknown Artist" && item.artist !== "...") {
+                              navigate(`/artist/${encodeURIComponent(item.artist)}`);
+                            }
+                          }}
+                          className="text-xs text-[color:var(--muted)] truncate cursor-pointer hover:text-pink-400 hover:underline transition-colors max-w-full"
+                          title={`Zobrazit profil interpreta ${item.artist}`}
+                        >
                           {item.artist}
                         </p>
                         <p className="text-[10px] text-pink-400 mt-1">
@@ -2081,11 +2108,20 @@ function App() {
                     <MdQueueMusic className="text-white/50" />
                   </div>
                 )}
-                <div className="overflow-hidden">
-                  <p className="text-sm font-semibold truncate cursor-pointer hover:underline">
+                <div className="overflow-hidden flex flex-col items-start">
+                  <p className="text-sm font-semibold truncate cursor-pointer hover:underline w-full">
                     {currentTrack.title}
                   </p>
-                  <p className="text-xs text-[color:var(--muted)] truncate">
+                  <p
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (currentTrack.artist && currentTrack.artist !== "Unknown Artist" && currentTrack.artist !== "...") {
+                        navigate(`/artist/${encodeURIComponent(currentTrack.artist)}`);
+                      }
+                    }}
+                    className="text-xs text-[color:var(--muted)] truncate cursor-pointer hover:text-pink-400 hover:underline transition-colors max-w-full"
+                    title={`Zobrazit profil interpreta ${currentTrack.artist}`}
+                  >
                     {currentTrack.artist}
                   </p>
                 </div>

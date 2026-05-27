@@ -1,6 +1,7 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response, stream_with_context
 from flask_cors import CORS
 import yt_dlp
+import requests
 import os
 from flask.cli import load_dotenv
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -43,6 +44,10 @@ def to_track_payload(info, fallback_query):
 
     audio_url = info.get("url")
 
+
+    base_url = request.host_url.rstrip("/")
+    proxy_url = f"{base_url}/api/stream?vid={video_id}"
+
     return {
         "id": video_id,
         "title": info.get("title", fallback_query),
@@ -53,7 +58,8 @@ def to_track_payload(info, fallback_query):
             "webpage_url",
             f"https://www.youtube.com/watch?v={video_id}"
         ),
-        "audio_url": audio_url
+        "audio_url": audio_url,
+        "proxy_url": proxy_url 
     }
 
 @app.route("/api/search", methods=["POST"])
@@ -121,6 +127,7 @@ def api_trending():
             result = ydl.extract_info(chart_url, download=False)
 
             entries = []
+            base_url = request.host_url.rstrip("/")
 
             if "entries" in result:
                 for entry in result["entries"]:
@@ -128,6 +135,7 @@ def api_trending():
                         continue
 
                     video_id = entry.get("id")
+                    proxy_url = f"{base_url}/api/stream?vid={video_id}"
 
                     entries.append({
                         "id": video_id,
@@ -139,7 +147,8 @@ def api_trending():
                             "webpage_url",
                             f"https://www.youtube.com/watch?v={video_id}"
                         ),
-                        "audio_url": entry.get("url")
+                        "audio_url": entry.get("url"),
+                        "proxy_url": proxy_url 
                     })
 
             return jsonify(entries)
@@ -147,6 +156,58 @@ def api_trending():
     except Exception as e:
         print(f"Trending Error: {e}")
         return jsonify([])
+
+
+@app.route("/api/stream", methods=["GET"])
+def api_stream():
+    video_id = request.args.get("vid")
+    if not video_id: 
+        return jsonify({"error": "Missing video ID"}), 400
+
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "quiet": True,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android"]
+            }
+        }
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+            audio_url = info.get("url")
+
+        if not audio_url: 
+            return jsonify({"error": "Could not extract audio"}), 500
+
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36", 
+            "Referer": "https://www.youtube.com/"
+        }
+        
+        range_header = request.headers.get("Range")
+        if range_header: 
+            headers["Range"] = range_header
+
+        upstream = requests.get(audio_url, headers=headers, stream=True)
+        
+        response = Response(
+            stream_with_context(upstream.iter_content(chunk_size=8192)),
+            status=upstream.status_code,
+        )
+
+        for h in ["Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"]:
+            if h in upstream.headers:
+                response.headers[h] = upstream.headers[h]
+
+        return response
+
+    except Exception as e:
+        print(f"Streaming error: {e}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(
