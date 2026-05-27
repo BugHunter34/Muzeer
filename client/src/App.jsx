@@ -1456,7 +1456,7 @@ function App() {
                       />
                     </label>
                     <label className="flex items-center justify-between gap-3">
-                      <span className="text-white/70">Speaker Glow</span>
+                      <span className="text-white/70">Speaker glow</span>
                       <input
                         type="color"
                         value={speakerGlow}
