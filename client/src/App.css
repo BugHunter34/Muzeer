@@ -507,12 +507,14 @@ button {
 
 .player-skip__glyph {
   display: inline-block;
-  font-size: 1.2rem;
+  font-size: 1.4rem;
   line-height: 1;
   color: currentColor;
   opacity: 1;
   filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.45));
   transform: translateY(-0.5px);
+  font-family: "Segoe UI Symbol", "Apple Color Emoji", "Noto Sans Symbols 2", sans-serif;
+  font-weight: 700;
 }
 
 .player-skip.is-play {
