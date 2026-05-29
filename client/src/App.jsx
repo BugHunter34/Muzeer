@@ -1038,72 +1038,82 @@ function App() {
       }, 120);
     
       try {
-        // ZMĚNA: Nyní voláme náš rychlý Node.js server místo přímého volání Pythonu
-        // Metoda je nyní GET a query posíláme v URL
-        const response = await fetch(`${API_BASE_URL}/media/search?q=${encodeURIComponent(query)}`, {
-          method: "GET",
-          credentials: "include", // Udrží session uživatele
-        });
-        
-        const data = await response.json();
-    
-        if (!response.ok) throw new Error(data.error || "Search failed");
-    
-        // Výsledky nyní chodí bezpečně zabelené uvnitř data.results
-        const normalizedResults = Array.isArray(data.results) ? data.results : Array.isArray(data) ? data : [];
-    
-        if (searchFetchProgressTimerRef.current) {
-          clearInterval(searchFetchProgressTimerRef.current);
-          searchFetchProgressTimerRef.current = null;
-        }
-    
-        setSearchResults(normalizedResults);
-        setIsSearchResultsOpen(normalizedResults.length > 0);
-    
-        if (normalizedResults.length > 0) {
-          setSearchProgressTarget((prev) => Math.max(prev, 72));
-          setVisibleSearchCount(1);
-    
-          const finalizeStart = Date.now();
-          const finalizeDuration = Math.max(700, normalizedResults.length * 120);
-          searchFinalizeProgressTimerRef.current = setInterval(() => {
-            const elapsed = Date.now() - finalizeStart;
-            const ratio = Math.min(1, elapsed / finalizeDuration);
-            const target = 72 + ratio * 28;
-            setSearchProgressTarget((prevTarget) => Math.max(prevTarget, target));
-            if (ratio >= 1) {
-              clearInterval(searchFinalizeProgressTimerRef.current);
-              searchFinalizeProgressTimerRef.current = null;
-            }
-          }, 40);
-    
-          searchRevealTimerRef.current = setInterval(() => {
-            setVisibleSearchCount((prev) => {
-              const next = prev + 1;
-              if (next >= normalizedResults.length) {
-                clearInterval(searchRevealTimerRef.current);
-                searchRevealTimerRef.current = null;
-                if (searchFinalizeProgressTimerRef.current) {
-                  clearInterval(searchFinalizeProgressTimerRef.current);
-                  searchFinalizeProgressTimerRef.current = null;
-                }
-                setSearchProgressTarget(100);
-                return normalizedResults.length;
-              }
-              return next;
-            });
-          }, 90);
-        } else {
-          setSearchProgressTarget(100);
-        }
-      } catch (err) {
-        console.error(err);
-        if (searchFetchProgressTimerRef.current) clearInterval(searchFetchProgressTimerRef.current);
-        if (searchFinalizeProgressTimerRef.current) clearInterval(searchFinalizeProgressTimerRef.current);
-        setSearchProgressTarget(0);
-      } finally {
-        setLoading(false);
+  // 1. Fetch data from your smart Node.js API
+  const response = await fetch(`${API_BASE_URL}/media/search?q=${encodeURIComponent(query)}`, {
+    method: "GET",
+    credentials: "include"
+  });
+
+  // 2. Parse the JSON response ONCE
+  const data = await response.json();
+
+  // 3. Check for errors right away before processing fields
+  if (!response.ok) {
+    throw new Error(data.error || "Search failed");
+  }
+
+  // 4. Safely unpack results (handles both the new wrap model and old raw arrays)
+  const normalizedResults = Array.isArray(data.results) 
+    ? data.results 
+    : Array.isArray(data) 
+      ? data 
+      : [];
+
+  // 5. Clean up the fetching timers
+  if (searchFetchProgressTimerRef.current) {
+    clearInterval(searchFetchProgressTimerRef.current);
+    searchFetchProgressTimerRef.current = null;
+  }
+
+  // 6. Update UI State variables
+  setSearchResults(normalizedResults);
+  setIsSearchResultsOpen(normalizedResults.length > 0);
+
+  // 7. Fire your slick layout animations/progress indicators
+  if (normalizedResults.length > 0) {
+    setSearchProgressTarget((prev) => Math.max(prev, 72));
+    setVisibleSearchCount(1);
+
+    const finalizeStart = Date.now();
+    const finalizeDuration = Math.max(700, normalizedResults.length * 120);
+    searchFinalizeProgressTimerRef.current = setInterval(() => {
+      const elapsed = Date.now() - finalizeStart;
+      const ratio = Math.min(1, elapsed / finalizeDuration);
+      const target = 72 + ratio * 28;
+      setSearchProgressTarget((prevTarget) => Math.max(prevTarget, target));
+      if (ratio >= 1) {
+        clearInterval(searchFinalizeProgressTimerRef.current);
+        searchFinalizeProgressTimerRef.current = null;
       }
+    }, 40);
+
+    searchRevealTimerRef.current = setInterval(() => {
+      setVisibleSearchCount((prev) => {
+        const next = prev + 1;
+        if (next >= normalizedResults.length) {
+          clearInterval(searchRevealTimerRef.current);
+          searchRevealTimerRef.current = null;
+          if (searchFinalizeProgressTimerRef.current) {
+            clearInterval(searchFinalizeProgressTimerRef.current);
+            searchFinalizeProgressTimerRef.current = null;
+          }
+          setSearchProgressTarget(100);
+          return normalizedResults.length;
+        }
+        return next;
+      });
+    }, 90);
+  } else {
+    setSearchProgressTarget(100);
+  }
+} catch (err) {
+  console.error(err);
+  if (searchFetchProgressTimerRef.current) clearInterval(searchFetchProgressTimerRef.current);
+  if (searchFinalizeProgressTimerRef.current) clearInterval(searchFinalizeProgressTimerRef.current);
+  setSearchProgressTarget(0);
+} finally {
+  setLoading(false);
+}
     };
 
   const clampChannel = (value, min = 25, max = 235) =>

@@ -1,5 +1,3 @@
-
-
 const mongoose = require("mongoose");
 
 const youtubeTrackSchema = new mongoose.Schema(
@@ -9,12 +7,13 @@ const youtubeTrackSchema = new mongoose.Schema(
       unique: true,
       index: true,
     },
-
     title: String,
     artist: String,
     thumbnail: String,
     duration: Number,
     webpage_url: String,
+    audio_url: String, // <-- ADD THIS
+    proxy_url: String, // <-- ADD THIS
 
     searchQueries: [String],
 
@@ -30,7 +29,7 @@ const youtubeTrackSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  },
+  }
 );
 
 module.exports =

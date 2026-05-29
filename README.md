@@ -1,4 +1,4 @@
-Muzeer 🎵
+﻿Muzeer ­čÄÁ
 
 Modern music streaming platform built with React, Node.js, Python and MongoDB.
 
@@ -50,6 +50,7 @@ server:
 npm start
 
 python run code
+uvicorn server:app --host 0.0.0.0 --port 5001 --proxy-headers
 
 Environment Variables
 

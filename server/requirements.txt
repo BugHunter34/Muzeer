@@ -9,3 +9,7 @@ discord.py
 motor 
 python-dotenv
 aiohttp
+fastapi 
+uvicorn 
+httpx 
+pydantic
