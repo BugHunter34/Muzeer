@@ -3,7 +3,7 @@ from flask_cors import CORS
 import yt_dlp
 import requests
 import os
-from flask.cli import load_dotenv
+from dotenv import load_dotenv
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)

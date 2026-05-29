@@ -5,8 +5,8 @@ const getEnvValue = (key) => {
   return typeof value === 'string' ? value.trim() : '';
 };
 
-const apiOrigin = trimTrailingSlash(getEnvValue('VITE_API_ORIGIN') || 'http://localhost:3000');
-const mediaOrigin = trimTrailingSlash(getEnvValue('VITE_MEDIA_ORIGIN') || 'http://localhost:5000');
+const apiOrigin = trimTrailingSlash(getEnvValue('VITE_API_ORIGIN') || 'http://localhost:3001');
+const mediaOrigin = trimTrailingSlash(getEnvValue('VITE_MEDIA_ORIGIN') || 'http://localhost:5001');
 
 export const API_ORIGIN = apiOrigin;
 export const MEDIA_ORIGIN = mediaOrigin;

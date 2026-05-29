@@ -4,9 +4,20 @@ const bcrypt = require("bcrypt"); // Changed from bcryptjs to match your import
 const jwt = require("jsonwebtoken");
 const sendEmail = require('../utils/codeemailer');
 
-const getCookieOptions = (req) => ({
-  ...req.app.locals.cookieOptions,
-});
+const isProd = process.env.NODE_ENV === 'production';
+
+// 2. Hardcode the literal strings so it is impossible to fail
+const finalCookieOptions = {
+  httpOnly: true,
+  secure: isProd, // MUST be true in production for 'none' to work
+  domain:".muzeer.com",
+  maxAge: 2 * 60 * 60 * 1000 // 2 hours
+};
+
+// 3. Safely attach the domain only if it exists
+if (process.env.COOKIE_DOMAIN) {
+  finalCookieOptions.domain = process.env.COOKIE_DOMAIN.trim();
+}
 
 const sanitizeUser = (user) => {
   return {
@@ -90,7 +101,7 @@ exports.verify2FA = async (req, res) => {
       { expiresIn: "2h" }
     );
 
-    res.cookie("token", token, getCookieOptions(req));
+    res.cookie("token", token, finalCookieOptions);
 
     res.status(200).json({
       message: "Login successful",

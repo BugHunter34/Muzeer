@@ -44,7 +44,7 @@ exports.register = async (req, res) => {
       await newUser.save();
   
       // 8. NOVÉ: Vytvoř link a odešli email
-      const publicApiUrl = trimTrailingSlash(process.env.PUBLIC_API_URL || 'http://localhost:3000');
+      const publicApiUrl = trimTrailingSlash(process.env.PUBLIC_API_URL || 'https://api.muzeer.com');
       const verifyLink = `${publicApiUrl}/api/auth/verify-email/${verifyToken}`;
       await sendVerifyEmail(normalizedEmail, userName, verifyLink);
   

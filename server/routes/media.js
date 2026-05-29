@@ -1,7 +1,6 @@
 const express = require("express");
 const router = express.Router();
 const YoutubeTrack = require("../models/youtubeTrack");
-
 router.get("/search", async (req, res) => {
   const query = req.query.q;
   
@@ -32,7 +31,7 @@ router.get("/search", async (req, res) => {
       return res.json({ source: 'database', results: formattedResults });
     }
 
-    const PYTHON_SERVER_URL = process.env.PYTHON_SERVER_URL || 'http://localhost:5000';
+    const PYTHON_SERVER_URL = process.env.PYTHON_SERVER_URL || 'http://media.muzeer.com';
     
     const pythonResponse = await fetch(`${PYTHON_SERVER_URL}/api/search`, {
       method: "POST",

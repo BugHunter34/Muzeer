@@ -8,28 +8,35 @@ var mongoose = require('mongoose');
 var dns = require('dns');
 var dotenv = require('dotenv');
 const Login = require('./models/login');
-dotenv.config({ path: path.join(__dirname, '.env') });
+
+dotenv.config();
+
+Object.keys(process.env).forEach((key) => {
+  if (typeof process.env[key] === 'string') {
+    process.env[key] = process.env[key].trim();
+    if (key.charCodeAt(0) === 0xFEFF) {
+      const normalizedKey = key.slice(1);
+      process.env[normalizedKey] = process.env[key];
+    }
+  }
+});
+
+const isProduction = process.env.NODE_ENV === 'production';
 
 const parseCsvEnv = (value, fallback) => {
-  const source = value || fallback || '';
+  const source = typeof value === 'string' ? value : fallback;
   return source
     .split(',')
     .map((entry) => entry.trim())
     .filter(Boolean);
 };
 
-const isProduction = process.env.NODE_ENV === 'production';
-const allowedOrigins = parseCsvEnv(process.env.CORS_ALLOWED_ORIGINS, 'http://localhost:5173');
+const defaultOrigins = isProduction 
+  ? 'https://muzeer.com,https://www.muzeer.com' 
+  : 'http://localhost:5173';
 
-// --- Fix BOM in env keys ---
-Object.keys(process.env).forEach((key) => {
-  if (key.charCodeAt(0) === 0xFEFF) {
-    const normalizedKey = key.slice(1);
-    if (!process.env[normalizedKey]) {
-      process.env[normalizedKey] = process.env[key];
-    }
-  }
-});
+const allowedOrigins = parseCsvEnv(process.env.CORS_ALLOWED_ORIGINS, defaultOrigins);
+console.log('🚀 Loaded CORS Allowed Origins:', allowedOrigins);
 
 // --- IMPORTS ---
 var indexRouter = require('./routes/index');
@@ -119,14 +126,27 @@ const corsOptions = {
   allowedHeaders: 'Content-Type, Authorization',
 };
 
+let safeSameSite = (process.env.COOKIE_SAME_SITE || 'lax')
+  .replace(/['"\r\n\s]/g, '')
+  .toLowerCase();
+
+// Double-check it. If it's still weird, default it to 'none' for production
+if (!['none', 'lax', 'strict'].includes(safeSameSite)) {
+  safeSameSite = process.env.NODE_ENV === 'production' ? 'none' : 'lax';
+}
+
+const safeDomain = process.env.COOKIE_DOMAIN ? process.env.COOKIE_DOMAIN.trim() : undefined;
+
+// --- SET GLOBALS ---
 app.locals.cookieOptions = {
   httpOnly: true,
-  secure: isProduction,
-  maxAge: 2 * 60 * 60 * 1000,
-  sameSite: process.env.COOKIE_SAME_SITE || (isProduction ? 'none' : 'lax'),
-  domain: process.env.COOKIE_DOMAIN || undefined,
-  path: '/'
+  secure: process.env.NODE_ENV === 'production', // MUST be true if sameSite is 'none'
+  sameSite: safeSameSite,
+  domain: safeDomain,
+  path: '/',
+  maxAge: 2 * 60 * 60 * 1000 // 2 hours (or whatever you had before)
 };
+
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));

@@ -1,2 +1,8 @@
 server/.env
 client/.env
+
+server/.env.production
+client/.env.production
+
+server/.venv
+server/__pycache__

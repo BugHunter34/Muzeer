@@ -10,7 +10,7 @@ export default defineConfig({
     strictPort: true, // Ensures it doesn't jump to 5174 if 5173 is "busy"
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:3001',
         changeOrigin: true,
       },
       '/media-api': {
@@ -24,7 +24,10 @@ export default defineConfig({
     allowedHosts: [
       //'evocative-fransisca-bootlessly.ngrok-free.dev',
       //'.ngrok-free.dev', // This allows any subdomain of ngrok-free.dev
-      'localhost'
+      'localhost',
+      'muzeer.com',
+      'www.muzeer.com',
+      'api.muzeer.com'
     ],
     
     /** 
