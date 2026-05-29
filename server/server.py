@@ -1,16 +1,19 @@
-from flask import Flask, request, jsonify, Response, stream_with_context
-from flask_cors import CORS
-import yt_dlp
-import requests
 import os
+import asyncio
+import httpx
+import yt_dlp
+from fastapi import FastAPI, Request, HTTPException, Header
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from dotenv import load_dotenv
-from werkzeug.middleware.proxy_fix import ProxyFix
 
-app = Flask(__name__)
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+# Load env variables
+load_dotenv(dotenv_path=".env")
 
-load_dotenv()
+app = FastAPI()
 
+# --- CORS SETUP ---
 def parse_csv_env(value, fallback=""):
     source = value or fallback
     return [entry.strip() for entry in source.split(",") if entry.strip()]
@@ -20,8 +23,15 @@ allowed_origins = parse_csv_env(
     "http://localhost:5173"
 )
 
-CORS(app, resources={r"/*": {"origins": allowed_origins}})
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
+# --- YT-DLP CONFIG ---
 YDL_OPTS = {
     "format": "bestaudio/best",
     "quiet": True,
@@ -34,17 +44,14 @@ YDL_OPTS = {
     }
 }
 
-def to_track_payload(info, fallback_query):
+# --- HELPER FUNCTIONS ---
+def to_track_payload(info, fallback_query, base_url: str):
     video_id = info.get("id")
-
-    thumbnail = (
-        info.get("thumbnail")
-        or f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
-    )
-
+    thumbnail = info.get("thumbnail") or f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
     audio_url = info.get("url")
-
-    base_url = request.host_url.rstrip("/")
+    
+    # Ensure base_url formatting
+    base_url = base_url.rstrip("/")
     proxy_url = f"{base_url}/api/stream?vid={video_id}"
 
     return {
@@ -53,161 +60,134 @@ def to_track_payload(info, fallback_query):
         "artist": info.get("uploader", "Unknown Artist"),
         "thumbnail": thumbnail,
         "duration": info.get("duration", 0),
-        "webpage_url": info.get(
-            "webpage_url",
-            f"https://www.youtube.com/watch?v={video_id}"
-        ),
+        "webpage_url": info.get("webpage_url", f"https://www.youtube.com/watch?v={video_id}"),
         "audio_url": audio_url,
         "proxy_url": proxy_url 
     }
 
-@app.route("/api/search", methods=["POST"])
-def api_search():
-    data = request.get_json(silent=True) or {}
-    query = data.get("query")
+# Blocking yt_dlp call needs to be isolated so it doesn't block the Async Event Loop
+def extract_info_sync(query: str, download=False, custom_opts=None):
+    opts = custom_opts if custom_opts else YDL_OPTS
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        return ydl.extract_info(query, download=download)
 
-    if not query:
-        return jsonify({"error": "Missing query"}), 400
+
+# --- REQUEST MODELS ---
+class SearchRequest(BaseModel):
+    query: str
+
+
+# --- ROUTES ---
+@app.post("/api/search")
+async def api_search(data: SearchRequest, request: Request):
+    if not data.query:
+        raise HTTPException(status_code=400, detail="Missing query")
+
+    normalized_query = str(data.query).strip()
+    base_url = str(request.base_url)
 
     try:
-        with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
-            normalized_query = str(query).strip()
+        # Run the heavy yt_dlp process in a background thread
+        if normalized_query.startswith(("http://", "https://")):
+            info = await asyncio.to_thread(extract_info_sync, normalized_query, False)
+            
+            if "entries" in info:
+                return [to_track_payload(e, normalized_query, base_url) for e in info["entries"] if e]
+            return [to_track_payload(info, normalized_query, base_url)]
 
-            if normalized_query.startswith(("http://", "https://")):
-                info = ydl.extract_info(
-                    normalized_query,
-                    download=False
-                )
-
-                if "entries" in info:
-                    results = [
-                        to_track_payload(e, normalized_query)
-                        for e in info["entries"]
-                        if e
-                    ]
-                    return jsonify(results)
-
-                return jsonify([
-                    to_track_payload(info, normalized_query)
-                ])
-
-            search_info = ydl.extract_info(
-                f"ytsearch10:{normalized_query} official audio",
-                download=False
-            )
-
-            entries = (search_info or {}).get("entries") or []
-
-            results = [
-                to_track_payload(entry, normalized_query)
-                for entry in entries
-                if entry
-            ]
-
-            return jsonify(results)
+        search_url = f"ytsearch10:{normalized_query} official audio"
+        search_info = await asyncio.to_thread(extract_info_sync, search_url, False)
+        
+        entries = (search_info or {}).get("entries") or []
+        return [to_track_payload(entry, normalized_query, base_url) for entry in entries if entry]
 
     except Exception as e:
         print(f"Search Error: {e}")
-        return jsonify({"error": str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.route("/api/trending", methods=["GET"])
-def api_trending():
+
+@app.get("/api/trending")
+async def api_trending(request: Request):
+    chart_url = "https://www.youtube.com/playlist?list=OLAK5uy_m3ud6eoJmyRFm7jnkVVctmbi9h8pDGJ7U"
+    
+    trending_opts = YDL_OPTS.copy()
+    trending_opts.update({
+        "playlistend": 8,
+        "noplaylist": False # Override to allow playlist scraping
+    })
+
     try:
-        chart_url = "https://www.youtube.com/playlist?list=OLAK5uy_m3ud6eoJmyRFm7jnkVVctmbi9h8pDGJ7U"
+        base_url = str(request.base_url)
+        # Run in thread to not block server
+        result = await asyncio.to_thread(extract_info_sync, chart_url, False, trending_opts)
 
-        ydl_opts = {
-            "quiet": True,
-            "extract_flat": False,
-            "playlistend": 8,
-            "format": "bestaudio/best"
-        }
+        entries = []
+        if "entries" in result:
+            for entry in result["entries"]:
+                if not entry: continue
+                entries.append(to_track_payload(entry, entry.get("title", ""), base_url))
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            result = ydl.extract_info(chart_url, download=False)
-
-            entries = []
-            base_url = request.host_url.rstrip("/")
-
-            if "entries" in result:
-                for entry in result["entries"]:
-                    if not entry:
-                        continue
-
-                    video_id = entry.get("id")
-                    proxy_url = f"{base_url}/api/stream?vid={video_id}"
-
-                    entries.append({
-                        "id": video_id,
-                        "title": entry.get("title"),
-                        "artist": entry.get("uploader", "Unknown Artist"),
-                        "thumbnail": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
-                        "duration": entry.get("duration", 0),
-                        "webpage_url": entry.get(
-                            "webpage_url",
-                            f"https://www.youtube.com/watch?v={video_id}"
-                        ),
-                        "audio_url": entry.get("url"),
-                        "proxy_url": proxy_url 
-                    })
-
-            return jsonify(entries)
+        return entries
 
     except Exception as e:
         print(f"Trending Error: {e}")
-        return jsonify([])
+        return []
 
-@app.route("/api/stream", methods=["GET"])
-def api_stream():
-    video_id = request.args.get("vid")
-    if not video_id: 
-        return jsonify({"error": "Missing video ID"}), 400
 
-    ydl_opts = {
-        "format": "bestaudio/best",
-        "quiet": True,
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android"]
-            }
-        }
-    }
+@app.get("/api/stream")
+async def api_stream(vid: str, request: Request):
+    if not vid:
+        raise HTTPException(status_code=400, detail="Missing video ID")
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-            audio_url = info.get("url")
+        # Get raw URL in background thread
+        info = await asyncio.to_thread(extract_info_sync, f"https://www.youtube.com/watch?v={vid}", False)
+        audio_url = info.get("url")
 
-        if not audio_url: 
-            return jsonify({"error": "Could not extract audio"}), 500
+        if not audio_url:
+            raise HTTPException(status_code=500, detail="Could not extract audio")
 
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36", 
             "Referer": "https://www.youtube.com/"
         }
         
+        # Forward range header from the client exactly as Flask did
         range_header = request.headers.get("Range")
-        if range_header: 
+        if range_header:
             headers["Range"] = range_header
 
-        upstream = requests.get(audio_url, headers=headers, stream=True)
-        
-        response = Response(
-            stream_with_context(upstream.iter_content(chunk_size=8192)),
-            status=upstream.status_code,
-        )
+        # Asynchronous streaming using HTTPX
+        client = httpx.AsyncClient()
+        req = client.build_request("GET", audio_url, headers=headers)
+        r = await client.send(req, stream=True)
 
+        async def stream_generator():
+            async for chunk in r.aiter_bytes(chunk_size=8192):
+                yield chunk
+            # Clean up the connection when finished
+            await r.aclose()
+            await client.aclose()
+
+        # Build response headers
+        response_headers = {}
         for h in ["Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"]:
-            if h in upstream.headers:
-                response.headers[h] = upstream.headers[h]
+            if h in r.headers:
+                response_headers[h] = r.headers[h]
 
-        return response
+        return StreamingResponse(
+            stream_generator(),
+            status_code=r.status_code,
+            headers=response_headers
+        )
 
     except Exception as e:
         print(f"Streaming error: {e}")
-        return jsonify({"error": str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
+# Note: In production, it's better to run this via Uvicorn command line rather than app.run()
 if __name__ == "__main__":
-    app.run(
-        host="0.0.0.0",
-        port=int(os.getenv("MEDIA_PORT", "5000"))
-    )
+    import uvicorn
+    port = int(os.getenv("MEDIA_PORT", "5000"))
+    # We pass "server:app" as a string so uvicorn can run multiple workers if needed
+    uvicorn.run("server:app", host="0.0.0.0", port=port, proxy_headers=True, forwarded_allow_ips="*")
