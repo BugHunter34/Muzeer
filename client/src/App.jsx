@@ -4,7 +4,6 @@ import './App.css'
 import './index.css'
 import { FaPlay, FaPause, FaVolumeUp, FaPlus, FaHeart, FaSearch, FaSlidersH, FaTrash, FaRedo, FaRetweet, FaBan, FaSyncAlt, FaCloudDownloadAlt, FaStepBackward, FaStepForward } from 'react-icons/fa'
 import { MdQueueMusic } from 'react-icons/md'
-import TokenCompartment from './components/TokenCompartment'
 import { API_BASE_URL, API_ORIGIN, MEDIA_API_BASE_URL, toAbsoluteApiUrl } from './config'
 
 // Add this to your CSS or a style tag to force icons to show
@@ -2320,16 +2319,6 @@ const handleImportPlaylist = async () => {
 
           {/* --- RIGHT SIDEBAR --- */}
           <aside className="hidden space-y-6 xl:flex xl:flex-col h-[calc(100vh-var(--player-offset)-96px)] sticky top-24">
-            <TokenCompartment
-              tokenWallet={tokenWallet}
-              onRefresh={loadTokenWallet}
-              onClaimQuest={handleClaimQuest}
-              onSpendTokens={handleSpendTokens}
-              leaderboard={tokenLeaderboard}
-              loading={tokenLoading}
-              isLoggedIn={Boolean(user)}
-            />
-
             <div className="rounded-3xl border border-white/10 bg-[color:var(--panel)]/80 p-5 flex-1 flex flex-col overflow-hidden">
               <div className="flex items-center justify-between mb-2">
                 <p className="flex items-center gap-2 text-xs uppercase tracking-[0.3em] text-[color:var(--muted)]">

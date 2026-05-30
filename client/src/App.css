@@ -279,6 +279,105 @@ button {
   text-transform: uppercase;
 }
 
+.text-cutout-mode :where(
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  p:not(:has(svg)),
+  span:not(:has(svg)),
+  a,
+  li,
+  strong,
+  em,
+  small,
+  label,
+  th,
+  td,
+  dt,
+  dd,
+  figcaption,
+  blockquote
+) {
+  color: transparent !important;
+  -webkit-text-fill-color: transparent;
+  background-image:
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--speaker-glow) 70%, #fff 30%) 0 28%, transparent 55%),
+    radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--accent-start) 90%, #fff 10%) 0 38%, transparent 42%),
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--accent-end) 90%, #fff 10%) 0 38%, transparent 42%),
+    radial-gradient(circle at 0% 100%, color-mix(in srgb, var(--accent-end) 88%, #fff 12%) 0 36%, transparent 40%),
+    radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--accent-start) 88%, #fff 12%) 0 36%, transparent 40%);
+  background-size: 200% 200%;
+  background-position: 20% 40%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  text-shadow: none;
+  transition: filter 220ms ease;
+  animation: liquid-orbit 14s linear infinite, liquid-hue 12s ease-in-out infinite;
+  will-change: background-position, filter, transform;
+}
+
+.brand-title--cutout {
+  filter: saturate(calc(1.15 + (var(--hz-energy, 0) * 0.8)));
+}
+
+.app-shell.potato-mode.text-cutout-mode :where(
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  p:not(:has(svg)),
+  span:not(:has(svg)),
+  a,
+  li,
+  strong,
+  em,
+  small,
+  label,
+  th,
+  td,
+  dt,
+  dd,
+  figcaption,
+  blockquote
+) {
+  animation: none;
+}
+
+@supports not ((-webkit-background-clip: text) or (background-clip: text)) {
+  .text-cutout-mode :where(
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6,
+    p:not(:has(svg)),
+    span:not(:has(svg)),
+    a,
+    li,
+    strong,
+    em,
+    small,
+    label,
+    th,
+    td,
+    dt,
+    dd,
+    figcaption,
+    blockquote
+  ) {
+    color: color-mix(in srgb, var(--accent-start) 55%, #ffffff 45%) !important;
+    -webkit-text-fill-color: initial;
+    background-image: none;
+    filter: none;
+  }
+}
+
 .brand-mark {
   font-family: "Cinzel", "Space Grotesk", sans-serif;
   box-shadow: 0 0 18px color-mix(in srgb, var(--accent-end) 50%, transparent);
@@ -555,4 +654,68 @@ button {
     opacity: 0.56;
     transform: scale(1.08);
   }
+}
+
+@keyframes text-cutout-orbit {
+  0% {
+    background-position: 20% 40%;
+  }
+  25% {
+    background-position: 60% 20%;
+  }
+  50% {
+    background-position: 80% 60%;
+  }
+  75% {
+    background-position: 40% 80%;
+  }
+  100% {
+    background-position: 20% 40%;
+  }
+}
+
+@keyframes text-cutout-hue {
+  0% {
+    filter: saturate(calc(1 + (var(--hz-energy, 0) * 0.65))) hue-rotate(0deg);
+  }
+  50% {
+    filter: saturate(calc(1.1 + (var(--hz-energy, 0) * 0.8))) hue-rotate(8deg);
+  }
+  100% {
+    filter: saturate(calc(1 + (var(--hz-energy, 0) * 0.65))) hue-rotate(0deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .text-cutout-mode :where(
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6,
+    p:not(:has(svg)),
+    span:not(:has(svg)),
+    a,
+    li,
+    strong,
+    em,
+    small,
+    label,
+    th,
+    td,
+    dt,
+    dd,
+    figcaption,
+    blockquote
+  ) {
+    animation: none;
+  }
+}
+
+.text-cutout-mode :where(svg) {
+  -webkit-text-fill-color: initial !important;
+  background-image: none !important;
+  filter: none !important;
+  animation: none !important;
 }
