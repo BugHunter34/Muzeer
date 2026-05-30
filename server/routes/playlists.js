@@ -9,6 +9,139 @@ const spotifyApi = new SpotifyWebApi({
   clientSecret: process.env.SPOTIFY_CLIENT_SECRET
 });
 
+const SPOTIFY_MARKET = 'US';
+const SPOTIFY_FALLBACK_TRACK_LIMIT = 30;
+
+const extractSpotifyPlaylistId = (input) => {
+  if (!input || typeof input !== 'string') return null;
+
+  const trimmed = input.trim();
+
+  // spotify:playlist:<id>
+  const uriMatch = trimmed.match(/^spotify:playlist:([a-zA-Z0-9]+)$/);
+  if (uriMatch) return uriMatch[1];
+
+  // https://open.spotify.com/playlist/<id>?si=...
+  // also supports locale prefixes like /intl-cs/playlist/<id>
+  const urlMatch = trimmed.match(/spotify\.com\/(?:intl-[a-z-]+\/)?playlist\/([a-zA-Z0-9]+)(?:\?.*)?$/i);
+  if (urlMatch) return urlMatch[1];
+
+  return null;
+};
+
+const ensureSpotifyAccessToken = async () => {
+  try {
+    const auth = await spotifyApi.clientCredentialsGrant();
+    const token = auth?.body?.access_token;
+    if (!token) throw new Error('Missing Spotify access token from credentials grant');
+    spotifyApi.setAccessToken(token);
+    return token;
+  } catch (grantError) {
+    const fallbackToken =
+      process.env.SPOTIFY_ACCESS_TOKEN ||
+      process.env.SPOTIFY_TOKEN ||
+      process.env.SpotifyTokenForSomeReason;
+
+    if (fallbackToken) {
+      spotifyApi.setAccessToken(fallbackToken);
+      return fallbackToken;
+    }
+
+    throw grantError;
+  }
+};
+
+const fetchSpotifyJson = async (path, accessToken) => {
+  const response = await fetch(`https://api.spotify.com/v1${path}`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    }
+  });
+
+  if (!response.ok) {
+    let details = `Spotify API request failed (${response.status})`;
+
+    try {
+      const payload = await response.json();
+      const apiMessage = payload?.error?.message;
+      if (apiMessage) details = apiMessage;
+    } catch {
+      // ignore malformed Spotify error bodies
+    }
+
+    const error = new Error(`An error occurred while communicating with Spotify's Web API.\nDetails: ${details}`);
+    error.status = response.status;
+    throw error;
+  }
+
+  return response.json();
+};
+
+const parseSpotifyPlaylistPage = async (playlistId) => {
+  const response = await fetch(`https://open.spotify.com/playlist/${playlistId}`);
+  if (!response.ok) {
+    throw new Error(`Failed to load Spotify playlist page (${response.status})`);
+  }
+
+  const html = await response.text();
+  const rawTitle = html.match(/<title>(.*?)<\/title>/i)?.[1]?.trim() || '';
+  const playlistName = rawTitle
+    .replace(/\s*-\s*playlist\s+by\s+.*$/i, '')
+    .replace(/\s*\|\s*Spotify(?:\s*Playlist)?$/i, '')
+    .trim() || 'Imported Spotify Playlist';
+
+  const trackIds = [...new Set(
+    Array.from(html.matchAll(/spotify:track:([A-Za-z0-9]+)/g), (match) => match[1])
+  )].slice(0, SPOTIFY_FALLBACK_TRACK_LIMIT);
+
+  return {
+    playlistName,
+    trackIds
+  };
+};
+
+const fetchSpotifyTrack = async (trackId, accessToken) => {
+  const track = await fetchSpotifyJson(`/tracks/${trackId}?market=${SPOTIFY_MARKET}`, accessToken);
+
+  return {
+    id: track.id,
+    name: track.name,
+    artists: Array.isArray(track.artists)
+      ? track.artists.map((artist) => ({ name: artist?.name || 'Unknown Artist' }))
+      : [{ name: 'Unknown Artist' }],
+    external_urls: track.external_urls || {},
+    album: track.album
+      ? {
+          images: Array.isArray(track.album.images) ? track.album.images : []
+        }
+      : { images: [] },
+    duration_ms: track.duration_ms || 0,
+    url: track.external_urls?.spotify || `https://open.spotify.com/track/${track.id}`
+  };
+};
+
+const fetchSpotifyTracksFromPageFallback = async (trackIds, accessToken) => {
+  const tracks = [];
+
+  for (let index = 0; index < trackIds.length; index += 5) {
+    const batch = trackIds.slice(index, index + 5);
+    const batchResults = await Promise.all(
+      batch.map(async (trackId) => {
+        try {
+          return await fetchSpotifyTrack(trackId, accessToken);
+        } catch (error) {
+          console.warn(`Failed to fetch Spotify track ${trackId}:`, error?.message || error);
+          return null;
+        }
+      })
+    );
+
+    tracks.push(...batchResults.filter(Boolean));
+  }
+
+  return tracks;
+};
+
 // --- THE BACKGROUND WORKER ---
 // This function runs completely detached from the HTTP request!
 async function processBackgroundImport(playlistId, tracksToProcess, source) {
@@ -115,30 +248,29 @@ router.post('/import', async (req, res) => {
     let playlistId = "";
     let playlistName = "";
     let rawTracks = [];
+    let importMessage = "";
 
     // 1. QUICKLY GRAB METADATA
     if (source === 'spotify') {
-      const auth = await spotifyApi.clientCredentialsGrant();
-      spotifyApi.setAccessToken(auth.body['access_token']);
+      const accessToken = await ensureSpotifyAccessToken();
 
-      const rawId = url.split('playlist/')[1]?.split('?')[0];
+      const rawId = extractSpotifyPlaylistId(url);
       if (!rawId) throw new Error("Invalid Spotify URL");
-      
-      const spotifyData = await spotifyApi.getPlaylist(rawId);
-      playlistId = `spotify-${rawId}`;
-      playlistName = spotifyData.body.name;
 
-      // Quickly grab all 1000 tracks via pagination
-      let offset = 0;
-      let limit = 100;
-      let total = 1; 
-      while (offset < total) {
-        const trackData = await spotifyApi.getPlaylistTracks(rawId, { limit, offset });
-        total = trackData.body.total;
-        rawTracks.push(...trackData.body.items);
-        offset += limit;
+      const playlistPageData = await parseSpotifyPlaylistPage(rawId);
+      playlistId = `spotify-${rawId}`;
+      playlistName = playlistPageData.playlistName;
+
+      if (!playlistPageData.trackIds.length) {
+        throw new Error('Spotify playlist page did not expose any track IDs.');
       }
-      rawTracks = rawTracks.map(item => item.track).filter(Boolean);
+
+      rawTracks = await fetchSpotifyTracksFromPageFallback(playlistPageData.trackIds, accessToken);
+      if (!rawTracks.length) {
+        throw new Error('Failed to fetch any Spotify track metadata from the playlist page fallback.');
+      }
+
+      importMessage = `Spotify restricted direct playlist access. Importing ${rawTracks.length} publicly visible tracks from the playlist page.`;
 
     } else {
       // YouTube Logic (Requires a slight refactor to just get the track URLs quickly from Python)
@@ -173,7 +305,7 @@ router.post('/import', async (req, res) => {
     res.json({
       success: true,
       playlist: { id: playlistId, name: playlistName, status: 'processing' },
-      message: `Importing ${rawTracks.length} tracks in the background. You can close this window!`
+      message: importMessage || `Importing ${rawTracks.length} tracks in the background. You can close this window!`
     });
 
     // 4. FIRE AND FORGET THE BACKGROUND WORKER
