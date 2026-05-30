@@ -76,8 +76,57 @@ def extract_info_sync(query: str, download=False, custom_opts=None):
 class SearchRequest(BaseModel):
     query: str
 
+class PlaylistRequest(BaseModel):
+    url: str
+    source: str = "youtube"
 
 # --- ROUTES ---
+
+@app.post("/api/playlist")
+async def api_playlist(data: PlaylistRequest, request: Request):
+    if not data.url:
+        raise HTTPException(status_code=400, detail="Missing URL")
+        
+    base_url = str(request.base_url)
+    
+
+    playlist_opts = YDL_OPTS.copy()
+    playlist_opts.update({
+        "noplaylist": False,
+        "playlistend": 2000, # 50 song cap
+        "extract_flat": False,
+        "ignoreerrors": True
+
+    })
+
+    try:
+        # background
+        info = await asyncio.to_thread(extract_info_sync, data.url, False, playlist_opts)
+        
+        # is single video instead of playlist -> wrap it up
+        entries = info.get("entries") if "entries" in info else [info]
+        
+        playlist_name = info.get("title", "Imported Playlist")
+        playlist_id = info.get("id", f"import-{os.urandom(4).hex()}")
+        
+        tracks = []
+        for entry in entries:
+            if not entry: continue
+            tracks.append(to_track_payload(entry, entry.get("title", ""), base_url))
+            
+        return {
+            "playlist": {
+                "id": playlist_id,
+                "name": playlist_name
+            },
+            "tracks": tracks
+        }
+        
+    except Exception as e:
+        print(f"Playlist Extraction Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
 @app.post("/api/search")
 async def api_search(data: SearchRequest, request: Request):
     if not data.query:

@@ -160,7 +160,7 @@ app.use('/api/bot', require('./routes/bot'));
 app.use('/api/token', require('./routes/token'));
 app.use('/api/media', require('./routes/media'));
 app.use('/api/artist', require('./routes/artist'));
-
+app.use('/api/playlists', require('./routes/playlists'));
 // Auth router
 app.use('/api/auth', authRoutes);
 
