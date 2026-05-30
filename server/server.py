@@ -71,7 +71,6 @@ def extract_info_sync(query: str, download=False, custom_opts=None):
     with yt_dlp.YoutubeDL(opts) as ydl:
         return ydl.extract_info(query, download=download)
 
-
 # --- REQUEST MODELS ---
 class SearchRequest(BaseModel):
     query: str
@@ -89,30 +88,46 @@ async def api_playlist(data: PlaylistRequest, request: Request):
         
     base_url = str(request.base_url)
     
-
-    playlist_opts = YDL_OPTS.copy()
-    playlist_opts.update({
+    # 1. FAST FLAT EXTRACTION (Grabs the skeleton of the playlist in 1 second)
+    flat_opts = YDL_OPTS.copy()
+    flat_opts.update({
         "noplaylist": False,
-        "playlistend": 2000, # 50 song cap
-        "extract_flat": False,
+        "playlistend": 50, # 50 song cap
+        "extract_flat": True, # <--- MAGIC BULLET #1: Don't extract audio URLs yet
         "ignoreerrors": True
-
     })
 
     try:
-        # background
-        info = await asyncio.to_thread(extract_info_sync, data.url, False, playlist_opts)
+        info = await asyncio.to_thread(extract_info_sync, data.url, False, flat_opts)
         
-        # is single video instead of playlist -> wrap it up
         entries = info.get("entries") if "entries" in info else [info]
-        
         playlist_name = info.get("title", "Imported Playlist")
         playlist_id = info.get("id", f"import-{os.urandom(4).hex()}")
         
-        tracks = []
-        for entry in entries:
-            if not entry: continue
-            tracks.append(to_track_payload(entry, entry.get("title", ""), base_url))
+        # 2. MULTI-THREADED DEEP EXTRACTION
+        # We will process 10 songs simultaneously using a Semaphore to prevent CPU overload
+        semaphore = asyncio.Semaphore(10) 
+        
+        async def fetch_single_track(entry):
+            if not entry or not entry.get("id"):
+                return None
+            
+            async with semaphore:
+                try:
+                    vid_url = f"https://www.youtube.com/watch?v={entry.get('id')}"
+                    # Use standard YDL_OPTS to get the deep audio_url info
+                    track_info = await asyncio.to_thread(extract_info_sync, vid_url, False)
+                    return to_track_payload(track_info, entry.get("title", ""), base_url)
+                except Exception as e:
+                    print(f"Skipping track {entry.get('id')} due to error: {e}")
+                    return None
+
+        # Fan out all the tasks simultaneously
+        tasks = [fetch_single_track(entry) for entry in entries]
+        
+        # Gather all results and filter out any Nones (crashed/deleted videos)
+        results = await asyncio.gather(*tasks)
+        tracks = [r for r in results if r is not None]
             
         return {
             "playlist": {
@@ -136,7 +151,6 @@ async def api_search(data: SearchRequest, request: Request):
     base_url = str(request.base_url)
 
     try:
-        # Run the heavy yt_dlp process in a background thread
         if normalized_query.startswith(("http://", "https://")):
             info = await asyncio.to_thread(extract_info_sync, normalized_query, False)
             
@@ -162,12 +176,11 @@ async def api_trending(request: Request):
     trending_opts = YDL_OPTS.copy()
     trending_opts.update({
         "playlistend": 8,
-        "noplaylist": False # Override to allow playlist scraping
+        "noplaylist": False 
     })
 
     try:
         base_url = str(request.base_url)
-        # Run in thread to not block server
         result = await asyncio.to_thread(extract_info_sync, chart_url, False, trending_opts)
 
         entries = []
@@ -189,7 +202,6 @@ async def api_stream(vid: str, request: Request):
         raise HTTPException(status_code=400, detail="Missing video ID")
 
     try:
-        # Get raw URL in background thread
         info = await asyncio.to_thread(extract_info_sync, f"https://www.youtube.com/watch?v={vid}", False)
         audio_url = info.get("url")
 
@@ -201,12 +213,10 @@ async def api_stream(vid: str, request: Request):
             "Referer": "https://www.youtube.com/"
         }
         
-        # Forward range header from the client exactly as Flask did
         range_header = request.headers.get("Range")
         if range_header:
             headers["Range"] = range_header
 
-        # Asynchronous streaming using HTTPX
         client = httpx.AsyncClient()
         req = client.build_request("GET", audio_url, headers=headers)
         r = await client.send(req, stream=True)
@@ -214,11 +224,9 @@ async def api_stream(vid: str, request: Request):
         async def stream_generator():
             async for chunk in r.aiter_bytes(chunk_size=8192):
                 yield chunk
-            # Clean up the connection when finished
             await r.aclose()
             await client.aclose()
 
-        # Build response headers
         response_headers = {}
         for h in ["Content-Type", "Content-Length", "Content-Range", "Accept-Ranges"]:
             if h in r.headers:
@@ -234,9 +242,7 @@ async def api_stream(vid: str, request: Request):
         print(f"Streaming error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Note: In production, it's better to run this via Uvicorn command line rather than app.run()
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("MEDIA_PORT", "5000"))
-    # We pass "server:app" as a string so uvicorn can run multiple workers if needed
     uvicorn.run("server:app", host="0.0.0.0", port=port, proxy_headers=True, forwarded_allow_ips="*")

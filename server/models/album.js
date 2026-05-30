@@ -15,6 +15,11 @@ const albumSchema = new mongoose.Schema({
     enum: ['album', 'playlist'], 
     default: 'album' 
   },
+  status: { 
+    type: String, 
+    enum: ['processing', 'ready', 'failed'], 
+    default: 'ready' 
+  },
   tracks: [{
     videoId: String,
     title: String,

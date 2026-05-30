@@ -2,7 +2,7 @@
 import { useNavigate } from 'react-router-dom';
 import './App.css'
 import './index.css'
-import { FaPlay, FaPause, FaVolumeUp, FaPlus, FaHeart, FaSearch, FaSlidersH, FaTrash, FaRedo, FaRetweet, FaBan, FaCloudDownloadAlt, FaStepBackward, FaStepForward } from 'react-icons/fa'
+import { FaPlay, FaPause, FaVolumeUp, FaPlus, FaHeart, FaSearch, FaSlidersH, FaTrash, FaRedo, FaRetweet, FaBan, FaSyncAlt, FaCloudDownloadAlt, FaStepBackward, FaStepForward } from 'react-icons/fa'
 import { MdQueueMusic } from 'react-icons/md'
 import TokenCompartment from './components/TokenCompartment'
 import { API_BASE_URL, API_ORIGIN, MEDIA_API_BASE_URL, toAbsoluteApiUrl } from './config'
@@ -1345,14 +1345,13 @@ useEffect(() => {
       video_id: videoId
     })
   }
-
-  const handleImportPlaylist = async () => {
+const handleImportPlaylist = async () => {
     const cleanedUrl = importUrl.trim()
     if (!cleanedUrl || importBusy) return
 
     setImportBusy(true)
     setImportError('')
-    setImportStatus('Importing playlist...')
+    setImportStatus('Initializing import...')
 
     try {
       const response = await fetch(`${API_BASE_URL}/playlists/import`, {
@@ -1371,32 +1370,28 @@ useEffect(() => {
         throw new Error(data?.error || `Import failed (${response.status})`)
       }
 
-      const importedTracks = Array.isArray(data?.tracks)
-        ? data.tracks.map(normalizeImportedTrack).filter((track) => track.webpage_url || track.audio_url || track.proxy_url)
-        : []
-
-      if (!importedTracks.length) {
-        throw new Error('No playable tracks were found in the imported playlist.')
+      // 1. Verify the backend successfully created the placeholder
+      if (!data.playlist || !data.playlist.id) {
+        throw new Error('Invalid response from server.')
       }
 
-      const importedName = createUniquePlaylistName(data?.playlist?.name || `${importSource} import`)
-      const importedId = `playlist-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+      const importedId = data.playlist.id;
+      const importedName = data.playlist.name || `${importSource} import`;
 
+      // 2. Add the playlist placeholder to the UI immediately
       setPlaylists((prev) => [...prev, {
         id: importedId,
         name: importedName,
-        tracks: importedTracks
+        status: data.playlist.status || 'processing', // This triggers the spinning icon
+        tracks: [] // Starts empty, fills up when the user clicks refresh!
       }])
 
+      // 3. Switch the UI to show the new (currently empty) playlist
       setActivePlaylistId(importedId)
       setRightPanelMode('playlist')
       setImportUrl('')
-      setImportStatus(`Imported ${importedTracks.length} tracks into "${importedName}".`)
-      setActivePlaylistId(importedId)
-      setRightPanelMode('playlist')
-      setImportUrl('')
-      setImportStatus(`Imported ${importedTracks.length} tracks into "${importedName}".`)
-      resolvePlaylistPreview(importedId, importedTracks)
+      setImportStatus(data.message || `Started importing "${importedName}".`)
+
     } catch (err) {
       setImportError(err?.message || 'Playlist import failed.')
       setImportStatus('')
@@ -1404,6 +1399,42 @@ useEffect(() => {
       setImportBusy(false)
     }
   }
+
+  const handleRefreshPlaylist = async (playlistId) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/playlists/${playlistId}`, {
+        method: 'GET',
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        throw new Error(`Refresh failed (${response.status})`);
+      }
+
+      const data = await response.json();
+
+      // Update the specific playlist in React state with the fresh database tracks
+      setPlaylists((prev) => prev.map((pl) => {
+        if (pl.id === playlistId) {
+          return {
+            ...pl,
+            name: data.playlist.name,
+            tracks: data.tracks,
+            status: data.playlist.status // Will be 'processing' or 'ready'
+          };
+        }
+        return pl;
+      }));
+
+      // If the currently viewed playlist is the one being refreshed, update the view preview too
+      if (activePlaylistId === playlistId) {
+        resolvePlaylistPreview(playlistId, data.tracks);
+      }
+
+    } catch (err) {
+      console.error("Failed to refresh playlist:", err);
+    }
+  };
 
   const removePlaylist = (playlistId) => {
     if (playlists.length <= 1) return
@@ -1856,8 +1887,7 @@ useEffect(() => {
 
         {/* Main Grid Layout */}
         <div className="mx-auto grid w-full max-w-[1600px] grid-cols-1 gap-6 px-4 pt-6 sm:px-5 lg:grid-cols-[320px_1fr_340px] lg:pt-8">
-
-          {/* --- LEFT SIDEBAR --- */}
+{/* --- LEFT SIDEBAR --- */}
           <aside className="hidden flex-col gap-6 lg:flex max-h-[calc(100vh-var(--player-offset)-96px)] min-h-0">
             <div className="rounded-3xl border border-white/10 bg-[color:var(--panel)]/80 p-5 backdrop-blur h-full min-h-0 flex flex-col overflow-hidden">
               <nav className="space-y-2 text-sm border-b border-white/10 pb-4">
@@ -1942,7 +1972,7 @@ useEffect(() => {
                           handleImportPlaylist()
                         }
                       }}
-                      placeholder="PAste URL"
+                      placeholder="Paste URL"
                       className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] text-white placeholder:text-white/30 outline-none focus:border-pink-500/50"
                     />
                   </div>
@@ -1975,21 +2005,40 @@ useEffect(() => {
                       }}
                     >
                       <div className="min-w-0">
-                        <p className="truncate text-xs font-semibold">{playlist.name}</p>
-                        <p className="text-[10px] text-white/45">{playlist.tracks.length} tracks</p>
+                        <p className="truncate text-xs font-semibold">
+                          {playlist.name} 
+                          {playlist.status === 'processing' && <span className="ml-2 text-[9px] text-emerald-400 uppercase tracking-widest animate-pulse">Downloading...</span>}
+                        </p>
+                        <p className="text-[10px] text-white/45">{playlist.tracks?.length || 0} tracks</p>
                       </div>
-                      <button
-                        type="button"
-                        disabled={playlists.length <= 1}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          removePlaylist(playlist.id)
-                        }}
-                        className="text-white/30 hover:text-rose-300 disabled:opacity-20 disabled:cursor-not-allowed"
-                        aria-label={`Delete ${playlist.name}`}
-                      >
-                        <FaTrash className="text-[11px]" />
-                      </button>
+                      
+                      {/* BUTTON WRAPPER FOR REFRESH & TRASH */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRefreshPlaylist(playlist.id);
+                          }}
+                          className={`text-white/30 hover:text-emerald-300 transition ${playlist.status === 'processing' ? 'animate-spin text-emerald-400' : ''}`}
+                          aria-label={`Refresh ${playlist.name}`}
+                        >
+                          <FaSyncAlt className="text-[11px]" />
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={playlists.length <= 1}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            removePlaylist(playlist.id)
+                          }}
+                          className="text-white/30 hover:text-rose-300 disabled:opacity-20 disabled:cursor-not-allowed"
+                          aria-label={`Delete ${playlist.name}`}
+                        >
+                          <FaTrash className="text-[11px]" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
