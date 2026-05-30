@@ -2,7 +2,7 @@
 import { useNavigate } from 'react-router-dom';
 import './App.css'
 import './index.css'
-import { FaPlay, FaPause, FaVolumeUp, FaPlus, FaHeart, FaSearch, FaSlidersH, FaTrash, FaRedo, FaRetweet, FaBan, FaCloudDownloadAlt } from 'react-icons/fa'
+import { FaPlay, FaPause, FaVolumeUp, FaPlus, FaHeart, FaSearch, FaSlidersH, FaTrash, FaRedo, FaRetweet, FaBan, FaCloudDownloadAlt, FaStepBackward, FaStepForward } from 'react-icons/fa'
 import { MdQueueMusic } from 'react-icons/md'
 import TokenCompartment from './components/TokenCompartment'
 import { API_BASE_URL, API_ORIGIN, MEDIA_API_BASE_URL, toAbsoluteApiUrl } from './config'
@@ -818,7 +818,7 @@ useEffect(() => {
           setQueueIndex(0)
         }
         playTrack(liveTracks[0], false)
-      } else if (liveCurrentTrack && (liveCurrentTrack.proxy_url || liveCurrentTrack.audio_url || liveCurrentTrack.webpage_url)) {
+      } else if (liveCurrentTrack && (liveCurrentTrack.proxy_url || liveCurrentTrack.proxy_url || liveCurrentTrack.webpage_url)) {
         playTrack(liveCurrentTrack, false)
       } else {
         setIsPlaying(false)
@@ -2377,11 +2377,12 @@ useEffect(() => {
           </aside>
         </div>
 
-        {/* --- BOTTOM PLAYER --- */}
+{/* --- BOTTOM PLAYER --- */}
         <div className="fixed bottom-0 left-0 right-0 z-[100] px-2 pb-3 sm:px-3 sm:pb-4">
           <div className="mx-auto max-w-[1580px] rounded-3xl border border-white/10 bg-[color:var(--panel)]/95 px-4 py-3 backdrop-blur sm:px-5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
 
+              {/* 1. Left Side: Track Info */}
               <div className="flex items-center gap-4 w-full sm:w-1/4 sm:min-w-[200px]">
                 {currentTrack.thumbnail ? (
                   <div className="h-12 w-12 rounded-2xl overflow-hidden relative group">
@@ -2400,14 +2401,19 @@ useEffect(() => {
                 <FaHeart className="ml-2 text-white/20 hover:text-pink-500 transition cursor-pointer" />
               </div>
 
+              {/* 2. Middle: Playback Controls & Progress */}
               <div className="flex flex-col items-center w-full sm:flex-1 sm:max-w-lg">
+                
+                {/* BUTTONS WRAPPER */}
                 <div className="flex items-center gap-6 mb-1">
                   <button
                     className={`player-skip ${isPlaying ? 'is-stop' : 'is-play'}`}
                     onClick={handlePrevTrack}
                     aria-label="Previous track"
                   >
-                    <span className="player-skip__glyph" aria-hidden="true">{"\u23EA"}</span>
+                    <span className="player-skip__glyph flex items-center justify-center" aria-hidden="true">
+                      <FaStepBackward className="text-white fill-current drop-shadow-[0_0_4px_rgba(255,255,255,0.2)]" />
+                    </span>
                   </button>
 
                   <button
@@ -2416,8 +2422,11 @@ useEffect(() => {
                     aria-label={isPlaying ? 'Pause playback' : 'Start playback'}
                   >
                     <span className="player-toggle__glow" aria-hidden="true" />
-                    {isPlaying ? (<FaPause style={iconStyle} className="relative z-10 text-white fill-current drop-shadow-[0_0_6px_rgba(255,255,255,0.35)]" />)
-                      : (<FaPlay style={iconStyle} className="ml-0.5 relative z-10 text-white fill-current drop-shadow-[0_0_6px_rgba(255,255,255,0.35)]" />)}
+                    {isPlaying ? (
+                      <FaPause style={iconStyle} className="relative z-10 text-white fill-current drop-shadow-[0_0_6px_rgba(255,255,255,0.35)]" />
+                    ) : (
+                      <FaPlay style={iconStyle} className="ml-0.5 relative z-10 text-white fill-current drop-shadow-[0_0_6px_rgba(255,255,255,0.35)]" />
+                    )}
                   </button>
 
                   <button
@@ -2425,10 +2434,13 @@ useEffect(() => {
                     onClick={handleNextTrack}
                     aria-label="Next track"
                   >
-                    <span className="player-skip__glyph" aria-hidden="true">{"\u23E9"}</span>
+                    <span className="player-skip__glyph flex items-center justify-center" aria-hidden="true">
+                      <FaStepForward className="text-white fill-current drop-shadow-[0_0_4px_rgba(255,255,255,0.2)]" />
+                    </span>
                   </button>
-                </div>
+                </div> 
 
+                {/* PROGRESS BAR */}
                 <div className="w-full flex items-center gap-3 text-xs sm:text-[15px] text-pink-500 font-bold ">
                   <span>{formatTime(currentTime)}</span>
                   <div className="flex-1 h-1 bg-white/10 rounded-full relative group cursor-pointer">
@@ -2453,6 +2465,7 @@ useEffect(() => {
                 </div>
               </div>
 
+              {/* 3. Right Side: Additional Controls */}
               <div className="hidden items-center gap-3 w-1/4 justify-end sm:flex">
                 <button
                   onClick={cycleLoopMode}
