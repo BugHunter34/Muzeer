@@ -1,4 +1,4 @@
-﻿Muzeer ­čÄÁ
+﻿Muzeer
 
 Modern music streaming platform built with React, Node.js, Python and MongoDB.
 
