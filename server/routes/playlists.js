@@ -506,14 +506,18 @@ router.get('/:id', async (req, res) => {
     const playlist = await Album.findOne({ youtubePlaylistId: req.params.id });
     if (!playlist) return res.status(404).json({ error: "Playlist not found" });
     
-    // Grab the actual streamable data for the tracks from the DB
+    // Grab the actual streamable data for ready tracks from YoutubeTrack DB
+    const readyTracksFromAlbum = (playlist.tracks || []).filter(t => t?.status === 'ready');
     const populatedTracks = await YoutubeTrack.find({ 
-      videoId: { $in: playlist.tracks.map(t => t.videoId) } 
+      videoId: { $in: readyTracksFromAlbum.map(t => t.videoId) } 
     });
 
     const populatedTrackById = new Map(populatedTracks.map((track) => [track.videoId, track]));
-    const readyTracks = playlist.tracks
+    
+    // Process all tracks: ready, failed, and partial ready (with fallback data from Album)
+    const readyTracks = (playlist.tracks || [])
       .map((track, index) => {
+        // Handle failed tracks (these have all data in Album already)
         if (track?.status === 'failed') {
           return {
             id: track.videoId || `failed-${playlist.youtubePlaylistId}-${index}`,
@@ -530,32 +534,41 @@ router.get('/:id', async (req, res) => {
           };
         }
 
-        const populated = populatedTrackById.get(track.videoId);
-        if (!populated) return null;
-
-        return {
-          id: populated.videoId,
-          title: populated.title,
-          artist: populated.artist,
-          thumbnail: populated.thumbnail,
-          duration: populated.duration,
-          webpage_url: populated.webpage_url,
-          audio_url: populated.audio_url,
-          proxy_url: populated.proxy_url,
-          state: 'ready',
-          order: index
-        };
+        // For 'ready' tracks: try to get full data from YoutubeTrack, fallback to Album data
+        if (track?.status === 'ready') {
+          const populated = populatedTrackById.get(track.videoId);
+          
+          // IMPORTANT: ALWAYS use proxy_url (which re-extracts fresh audio URL)
+          // Never use audio_url directly - YouTube URLs expire!
+          const proxyUrl = populated?.proxy_url || `https://media.muzeer.com/api/stream?vid=${track.videoId}`;
+          
+          // Use populated data if available, otherwise use Album data (prefetch case)
+          return {
+            id: track.videoId,
+            title: populated?.title || track.title || 'Unknown title',
+            artist: populated?.artist || track.artist || 'Unknown Artist',
+            thumbnail: populated?.thumbnail || track.thumbnail || null,
+            duration: populated?.duration || track.duration || 0,
+            webpage_url: populated?.webpage_url || null,
+            audio_url: null, // Don't use expired YouTube URLs!
+            proxy_url: proxyUrl, // Always use proxy for fresh audio extraction
+            state: 'ready',
+            order: index
+          };
+        }
+        
+        return null;
       })
       .filter(Boolean);
 
-    const failedCount = readyTracks.filter((track) => track.state === 'failed').length;
-    const loadedCount = readyTracks.filter((track) => track.state === 'ready').length;
+    const failedCount = (playlist.tracks || []).filter(t => t?.status === 'failed').length;
+    const loadedCount = (playlist.tracks || []).filter(t => t?.status === 'ready').length;
 
-    const expectedTrackCount = Math.max(playlist.expectedTrackCount || 0, readyTracks.length);
-    const pendingCount = Math.max(0, expectedTrackCount - readyTracks.length);
+    const expectedTrackCount = Math.max(playlist.expectedTrackCount || 0, (playlist.tracks || []).length);
+    const pendingCount = Math.max(0, expectedTrackCount - (playlist.tracks || []).length);
     const pendingTracks = Array.from({ length: pendingCount }, (_, idx) => ({
       id: `pending-${playlist.youtubePlaylistId}-${idx + 1}`,
-      title: `Loading track ${readyTracks.length + idx + 1}`,
+      title: `Loading track ${loadedCount + idx + 1}`,
       artist: 'Import in progress',
       thumbnail: null,
       duration: 0,
@@ -563,7 +576,7 @@ router.get('/:id', async (req, res) => {
       audio_url: null,
       proxy_url: null,
       state: 'pending',
-      order: readyTracks.length + idx
+      order: loadedCount + idx
     }));
 
     const orderedTracks = [...readyTracks, ...pendingTracks];

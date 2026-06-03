@@ -1534,6 +1534,21 @@ const handleImportPlaylist = async () => {
     }))
   }
 
+  const isTrackInPlaylist = useCallback((track, playlistId = activePlaylistId) => {
+    const targetPlaylist = playlists.find((playlist) => playlist.id === playlistId)
+    if (!targetPlaylist || !track) return false
+
+    const trackIdentity = track.webpage_url || track.audio_url || track.proxy_url
+    const normalizedTitle = (track.title || '').toLowerCase()
+
+    return targetPlaylist.tracks.some((item) => {
+      const itemIdentity = item.webpage_url || item.audio_url || item.proxy_url
+      const sameIdentity = Boolean(itemIdentity && trackIdentity && itemIdentity === trackIdentity)
+      const sameTitle = normalizedTitle && (item.title || '').toLowerCase() === normalizedTitle
+      return sameIdentity || sameTitle
+    })
+  }, [playlists, activePlaylistId])
+
   const activePlaylist = playlists.find((playlist) => playlist.id === activePlaylistId) || null
 
   const handleSearch = async (e) => {
@@ -2461,6 +2476,20 @@ const handleImportPlaylist = async () => {
                             {isTrackReady ? 'Ready' : isTrackFailed ? 'Failed' : 'Loading...'}
                           </p>
                         </div>
+                        {isTrackReady && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              removeTrackFromPlaylist(activePlaylist.id, index)
+                            }}
+                            className="ml-auto rounded-md border border-white/10 p-1.5 text-white/45 transition hover:border-rose-400/40 hover:bg-rose-500/10 hover:text-rose-300"
+                            aria-label={`Remove ${rowTitle} from ${activePlaylist.name}`}
+                            title="Remove from playlist"
+                          >
+                            <FaTrash className="text-[10px]" />
+                          </button>
+                        )}
                       </div>
                         )
                       })()
@@ -2496,6 +2525,19 @@ const handleImportPlaylist = async () => {
                         <p className={`text-xs font-bold truncate ${playbackSource === 'queue' && i === queueIndex ? 'text-[#00ff00]' : 'text-white'}`}>{track.title}</p>
                         <p className="text-[10px] text-[color:var(--muted)] truncate">{track.artist}</p>
                       </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          addTrackToPlaylist(track)
+                        }}
+                        disabled={!activePlaylist || isTrackInPlaylist(track)}
+                        className="ml-auto rounded-md border border-white/10 p-1.5 text-pink-200 transition hover:border-pink-400/40 hover:bg-pink-500/15 hover:text-pink-100 disabled:cursor-not-allowed disabled:border-white/5 disabled:bg-white/5 disabled:text-white/25"
+                        aria-label={`Add ${track.title || 'track'} to ${activePlaylist?.name || 'playlist'}`}
+                        title={isTrackInPlaylist(track) ? 'Already in playlist' : `Add to ${activePlaylist?.name || 'playlist'}`}
+                      >
+                        <FaPlus className="text-[10px]" />
+                      </button>
                     </div>
                   ))
                 )}

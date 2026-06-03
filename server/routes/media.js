@@ -25,8 +25,8 @@ router.get("/search", async (req, res) => {
         thumbnail: track.thumbnail,
         duration: track.duration,
         webpage_url: track.webpage_url,
-        audio_url: track.audio_url,
-        proxy_url: track.proxy_url || ""
+        audio_url: null, // Don't return expired YouTube URLs
+        proxy_url: track.proxy_url || `https://media.muzeer.com/api/stream?vid=${track.videoId}`
       }));
       return res.json({ source: 'database', results: formattedResults });
     }
@@ -69,7 +69,18 @@ router.get("/search", async (req, res) => {
       );
     }
 
-    return res.json({ source: 'youtube', results: normalizedTracks });
+    const formattedTracks = normalizedTracks.map(track => ({
+      id: track.id,
+      title: track.title,
+      artist: track.artist,
+      thumbnail: track.thumbnail,
+      duration: track.duration,
+      webpage_url: track.webpage_url,
+      audio_url: null, // Don't return expired YouTube URLs
+      proxy_url: track.proxy_url || `https://media.muzeer.com/api/stream?vid=${track.id}`
+    }));
+
+    return res.json({ source: 'youtube', results: formattedTracks });
 
   } catch (err) {
     return res.status(500).json({ error: "Internal Server Error" });
