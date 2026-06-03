@@ -20,11 +20,22 @@ const albumSchema = new mongoose.Schema({
     enum: ['processing', 'ready', 'failed'], 
     default: 'ready' 
   },
+  expectedTrackCount: {
+    type: Number,
+    default: 0
+  },
   tracks: [{
     videoId: String,
     title: String,
     duration: Number,
-    thumbnail: String
+    thumbnail: String,
+    artist: String,
+    status: {
+      type: String,
+      enum: ['ready', 'failed'],
+      default: 'ready'
+    },
+    failureReason: String
   }],
   lastUpdated: { 
     type: Date, 

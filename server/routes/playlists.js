@@ -229,10 +229,21 @@ async function processBackgroundImport(playlistId, tracksToProcess, source) {
         } catch (err) {
           console.warn(`⚠️ Background Worker failed to convert: ${query}`);
         }
-        return null;
+        return {
+          failed: true,
+          title: source === 'spotify'
+            ? (track?.name || 'Unknown title')
+            : (track?.title || 'Unknown title'),
+          artist: source === 'spotify'
+            ? (track?.artists?.[0]?.name || 'Unknown Artist')
+            : (track?.artist || track?.channel || 'Unknown Artist'),
+          query
+        };
       });
 
-      const convertedTracks = (await Promise.all(promises)).filter(Boolean);
+      const batchResults = await Promise.all(promises);
+      const convertedTracks = batchResults.filter((item) => item && !item.failed);
+      const failedTracks = batchResults.filter((item) => item && item.failed);
 
       // Save each converted track to the global database
       for (const t of convertedTracks) {
@@ -265,8 +276,29 @@ async function processBackgroundImport(playlistId, tracksToProcess, source) {
                 videoId: t.id,
                 title: t.title,
                 duration: t.duration,
-                thumbnail: t.thumbnail
+                thumbnail: t.thumbnail,
+                status: 'ready'
               } 
+            },
+            $set: { lastUpdated: new Date() }
+          }
+        );
+      }
+
+      for (const failedTrack of failedTracks) {
+        await Album.updateOne(
+          { youtubePlaylistId: playlistId },
+          {
+            $push: {
+              tracks: {
+                videoId: `failed-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                title: failedTrack.title || 'Unknown title',
+                duration: 0,
+                thumbnail: null,
+                artist: failedTrack.artist || 'Unknown Artist',
+                status: 'failed',
+                failureReason: 'Track conversion failed'
+              }
             },
             $set: { lastUpdated: new Date() }
           }
@@ -299,6 +331,7 @@ router.post('/import', async (req, res) => {
     let playlistId = "";
     let playlistName = "";
     let rawTracks = [];
+    let expectedTrackCount = 0;
     let importMessage = "";
 
     // 1. QUICKLY GRAB METADATA
@@ -318,6 +351,8 @@ router.post('/import', async (req, res) => {
           throw new Error('Spotify playlist API returned no tracks.');
         }
 
+        expectedTrackCount = rawTracks.length;
+
         importMessage = `Imported ${rawTracks.length} tracks from Spotify.`;
       } catch (apiError) {
         const playlistPageData = await parseSpotifyPlaylistPage(rawId);
@@ -331,6 +366,8 @@ router.post('/import', async (req, res) => {
         if (!rawTracks.length) {
           throw new Error('Failed to fetch any Spotify track metadata from the playlist page fallback.');
         }
+
+        expectedTrackCount = rawTracks.length;
 
         importMessage = `Spotify API was unavailable, so ${rawTracks.length} publicly visible tracks were imported from the playlist page.`;
         console.warn('Spotify API playlist import fell back to page scraping:', apiError?.message || apiError);
@@ -351,6 +388,7 @@ router.post('/import', async (req, res) => {
       playlistId = pyData.playlist.id;
       playlistName = pyData.playlist.name;
       rawTracks = pyData.tracks;
+      expectedTrackCount = Array.isArray(pyData.tracks) ? pyData.tracks.length : 0;
     }
 
     // 2. CREATE OR RESET THE PLACEHOLDER PLAYLIST IN MONGODB
@@ -361,6 +399,7 @@ router.post('/import', async (req, res) => {
           title: playlistName,
           type: 'playlist',
           status: 'processing',
+          expectedTrackCount,
           tracks: [],
           lastUpdated: new Date()
         }
@@ -398,22 +437,72 @@ router.get('/:id', async (req, res) => {
     });
 
     const populatedTrackById = new Map(populatedTracks.map((track) => [track.videoId, track]));
-    const orderedTracks = playlist.tracks
-      .map((track) => populatedTrackById.get(track.videoId))
-      .filter(Boolean)
-      .map((track) => ({
-        id: track.videoId,
-        title: track.title,
-        artist: track.artist,
-        thumbnail: track.thumbnail,
-        duration: track.duration,
-        webpage_url: track.webpage_url,
-        audio_url: track.audio_url,
-        proxy_url: track.proxy_url
-      }));
+    const readyTracks = playlist.tracks
+      .map((track, index) => {
+        if (track?.status === 'failed') {
+          return {
+            id: track.videoId || `failed-${playlist.youtubePlaylistId}-${index}`,
+            title: track.title || 'Unknown title',
+            artist: track.artist || 'Unknown Artist',
+            thumbnail: track.thumbnail || null,
+            duration: track.duration || 0,
+            webpage_url: null,
+            audio_url: null,
+            proxy_url: null,
+            state: 'failed',
+            failureReason: track.failureReason || 'Track conversion failed',
+            order: index
+          };
+        }
+
+        const populated = populatedTrackById.get(track.videoId);
+        if (!populated) return null;
+
+        return {
+          id: populated.videoId,
+          title: populated.title,
+          artist: populated.artist,
+          thumbnail: populated.thumbnail,
+          duration: populated.duration,
+          webpage_url: populated.webpage_url,
+          audio_url: populated.audio_url,
+          proxy_url: populated.proxy_url,
+          state: 'ready',
+          order: index
+        };
+      })
+      .filter(Boolean);
+
+    const failedCount = readyTracks.filter((track) => track.state === 'failed').length;
+    const loadedCount = readyTracks.filter((track) => track.state === 'ready').length;
+
+    const expectedTrackCount = Math.max(playlist.expectedTrackCount || 0, readyTracks.length);
+    const pendingCount = Math.max(0, expectedTrackCount - readyTracks.length);
+    const pendingTracks = Array.from({ length: pendingCount }, (_, idx) => ({
+      id: `pending-${playlist.youtubePlaylistId}-${idx + 1}`,
+      title: `Loading track ${readyTracks.length + idx + 1}`,
+      artist: 'Import in progress',
+      thumbnail: null,
+      duration: 0,
+      webpage_url: null,
+      audio_url: null,
+      proxy_url: null,
+      state: 'pending',
+      order: readyTracks.length + idx
+    }));
+
+    const orderedTracks = [...readyTracks, ...pendingTracks];
 
     res.json({
-      playlist: { id: playlist.youtubePlaylistId, name: playlist.title, status: playlist.status },
+      playlist: {
+        id: playlist.youtubePlaylistId,
+        name: playlist.title,
+        status: playlist.status,
+        expectedTrackCount,
+        loadedTrackCount: loadedCount,
+        pendingTrackCount: pendingCount,
+        failedTrackCount: failedCount
+      },
       tracks: orderedTracks
     });
   } catch (err) {

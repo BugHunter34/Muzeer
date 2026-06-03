@@ -599,7 +599,8 @@ useEffect(() => {
     if (!track || typeof track !== 'object') return track
 
     const normalized = { ...track }
-    const videoId = normalized.video_id
+    const explicitVideoId = normalized.video_id || normalized.videoId || normalized.id
+    const videoId = explicitVideoId
       || extractVideoIdFromUrl(normalized.webpage_url)
       || extractVideoIdFromUrl(normalized.audio_url)
       || extractVideoIdFromUrl(normalized.proxy_url)
@@ -1341,20 +1342,28 @@ useEffect(() => {
 
     const data = await response.json()
 
+    const normalizedTracks = Array.isArray(data.tracks)
+      ? data.tracks.map((track) => sanitizeTrackForPlayback(track))
+      : []
+
     setPlaylists((prev) => prev.map((pl) => {
       if (pl.id === playlistId) {
         return {
           ...pl,
           name: data.playlist.name,
-          tracks: data.tracks,
-          status: data.playlist.status
+          tracks: normalizedTracks,
+          status: data.playlist.status,
+          expectedTrackCount: data.playlist.expectedTrackCount || normalizedTracks.length,
+          loadedTrackCount: data.playlist.loadedTrackCount || 0,
+          pendingTrackCount: data.playlist.pendingTrackCount || 0,
+          failedTrackCount: data.playlist.failedTrackCount || 0
         }
       }
       return pl
     }))
 
     if (updatePreview && activePlaylistId === playlistId) {
-      resolvePlaylistPreview(playlistId, data.tracks)
+      resolvePlaylistPreview(playlistId, normalizedTracks)
     }
 
     return data
@@ -1415,6 +1424,10 @@ const handleImportPlaylist = async () => {
           id: importedId,
           name: importedName,
           status: data.playlist.status || 'processing',
+          expectedTrackCount: 0,
+          loadedTrackCount: 0,
+          pendingTrackCount: 0,
+          failedTrackCount: 0,
           tracks: []
         }
 
@@ -2380,7 +2393,9 @@ const handleImportPlaylist = async () => {
                   {rightPanelMode === 'playlist' ? (activePlaylist?.name || 'Playlist') : 'Queue'}
                 </p>
                 <span className="text-[10px] text-white/30">
-                  {rightPanelMode === 'playlist' ? `${activePlaylist?.tracks?.length || 0} tracks` : `${queue.length} tracks`}
+                  {rightPanelMode === 'playlist'
+                    ? `${activePlaylist?.loadedTrackCount || 0}/${activePlaylist?.expectedTrackCount || activePlaylist?.tracks?.length || 0} ready${(activePlaylist?.failedTrackCount || 0) > 0 ? ` • ${activePlaylist.failedTrackCount} failed` : ''}`
+                    : `${queue.length} tracks`}
                 </span>
               </div>
 
@@ -2405,18 +2420,33 @@ const handleImportPlaylist = async () => {
                 {rightPanelMode === 'playlist' ? (
                   activePlaylist?.tracks?.length ? (
                     activePlaylist.tracks.map((track, index) => (
+                      (() => {
+                        const isTrackPending = track?.state === 'pending'
+                        const isTrackFailed = track?.state === 'failed'
+                        const isTrackReady = !isTrackPending && !isTrackFailed
+                        const rowTitle = track?.title || `Loading track ${index + 1}`
+                        const rowArtist = isTrackPending
+                          ? (track?.artist || 'Import in progress')
+                          : isTrackFailed
+                            ? (track?.failureReason || 'Track conversion failed')
+                            : (track?.artist || 'Unknown Artist')
+
+                        return (
                       <div
                         key={`${track.webpage_url || track.title}-${index}`}
-                        onClick={() => playFromPlaylist(activePlaylist.tracks, index)}
-                        className={`flex items-center gap-3 p-2 rounded-xl transition cursor-pointer ${isActiveTrack(track) ? 'bg-pink-500/10 border border-pink-500/20' : 'hover:bg-white/5 border border-transparent'}`}
+                        onClick={() => {
+                          if (!isTrackReady) return
+                          playFromPlaylist(activePlaylist.tracks, index)
+                        }}
+                        className={`flex items-center gap-3 p-2 rounded-xl border transition ${isTrackReady ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'} ${isTrackReady && isActiveTrack(track) ? 'bg-pink-500/10 border-pink-500/20' : isTrackReady ? 'hover:bg-white/5 border-transparent' : isTrackFailed ? 'border-rose-500/25 bg-rose-500/10' : 'border-white/10 bg-white/5'}`}
                       >
                         <div className="h-10 w-10 rounded-lg overflow-hidden shrink-0 relative">
                           {track.thumbnail ? (
-                            <img src={track.thumbnail} className={`h-full w-full object-cover ${isActiveTrack(track) ? 'opacity-40' : ''}`} alt="" />
+                            <img src={track.thumbnail} className={`h-full w-full object-cover ${isTrackReady && isActiveTrack(track) ? 'opacity-40' : ''}`} alt="" />
                           ) : (
                             <div className="h-full w-full bg-white/10" />
                           )}
-                          {isActiveTrack(track) && (
+                          {isTrackReady && isActiveTrack(track) && (
                             <div className="absolute inset-0 flex items-center justify-center">
                               <div className="w-1 h-3 bg-[#00ff00] animate-pulse mx-[1px]"></div>
                               <div className="w-1 h-4 bg-[#00ff00] animate-pulse mx-[1px]"></div>
@@ -2425,10 +2455,15 @@ const handleImportPlaylist = async () => {
                           )}
                         </div>
                         <div className="overflow-hidden">
-                          <p className={`text-xs font-bold truncate ${isActiveTrack(track) ? 'text-[#00ff00]' : 'text-white'}`}>{track.title}</p>
-                          <p className="text-[10px] text-[color:var(--muted)] truncate">{track.artist}</p>
+                          <p className={`text-xs font-bold truncate ${isTrackReady && isActiveTrack(track) ? 'text-[#00ff00]' : 'text-white'}`}>{rowTitle}</p>
+                          <p className="text-[10px] text-[color:var(--muted)] truncate">{rowArtist}</p>
+                          <p className={`text-[9px] uppercase tracking-widest ${isTrackReady ? 'text-emerald-300/80' : isTrackFailed ? 'text-rose-300/90' : 'text-amber-300/80 animate-pulse'}`}>
+                            {isTrackReady ? 'Ready' : isTrackFailed ? 'Failed' : 'Loading...'}
+                          </p>
                         </div>
                       </div>
+                        )
+                      })()
                     ))
                   ) : (
                     <div className="h-full flex flex-col items-center justify-center text-white/20 text-center">
