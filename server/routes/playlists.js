@@ -10,7 +10,8 @@ const spotifyApi = new SpotifyWebApi({
 });
 
 const SPOTIFY_MARKET = 'US';
-const SPOTIFY_FALLBACK_TRACK_LIMIT = 30;
+const SPOTIFY_FALLBACK_TRACK_LIMIT = 150;
+const SPOTIFY_CACHE_TTL_DAYS = 7; // Cache Spotify metadata for 7 days
 
 const normalizeSpotifyTrack = (track) => ({
   id: track.id,
@@ -91,6 +92,38 @@ const fetchSpotifyJson = async (path, accessToken) => {
   }
 
   return response.json();
+};
+
+const getSpotifyPlaylistCache = async (spotifyPlaylistId) => {
+  const cacheKey = `spotify-cache-${spotifyPlaylistId}`;
+  const cached = await Album.findOne({ youtubePlaylistId: cacheKey, type: 'spotify_cache' });
+  
+  if (cached && cached.cachedAt) {
+    const ageInDays = (Date.now() - cached.cachedAt.getTime()) / (1000 * 60 * 60 * 24);
+    if (ageInDays < SPOTIFY_CACHE_TTL_DAYS) {
+      console.log(`✅ Using cached Spotify playlist data (${ageInDays.toFixed(1)} days old)`);
+      return { playlistName: cached.title, trackIds: cached.cachedTrackIds, tracks: cached.cachedTracks };
+    }
+  }
+  return null;
+};
+
+const cacheSpotifyPlaylist = async (spotifyPlaylistId, playlistName, trackIds, tracks) => {
+  const cacheKey = `spotify-cache-${spotifyPlaylistId}`;
+  await Album.updateOne(
+    { youtubePlaylistId: cacheKey },
+    {
+      $set: {
+        type: 'spotify_cache',
+        title: playlistName,
+        cachedTrackIds: trackIds,
+        cachedTracks: tracks,
+        cachedAt: new Date(),
+        status: 'cached'
+      }
+    },
+    { upsert: true }
+  );
 };
 
 const parseSpotifyPlaylistPage = async (playlistId) => {
@@ -198,13 +231,14 @@ const fetchSpotifyTracksFromPageFallback = async (trackIds, accessToken) => {
 async function processBackgroundImport(playlistId, tracksToProcess, source) {
   console.log(`🚀 Background worker started for ${playlistId}. Processing ${tracksToProcess.length} tracks...`);
   const PYTHON_SERVER_URL = process.env.PYTHON_SERVER_URL || 'https://media.muzeer.com';
+  const MAX_RETRIES = 2; // Retry failed conversions up to 2 times
 
   try {
-    // Process in batches of 4 to be fast but not crash Python
-    for (let i = 0; i < tracksToProcess.length; i += 4) {
-      const batch = tracksToProcess.slice(i, i + 4);
+    // Process in batches of 8 (increased from 4 for faster throughput)
+    for (let i = 0; i < tracksToProcess.length; i += 8) {
+      const batch = tracksToProcess.slice(i, i + 8);
       
-      const promises = batch.map(async (track) => {
+      const promises = batch.map(async (track, _retryCount = 0) => {
         let query = "";
         
         // Handle Spotify vs YouTube raw track data formatting
@@ -215,19 +249,34 @@ async function processBackgroundImport(playlistId, tracksToProcess, source) {
           query = track.url || track.title; 
         }
 
-        try {
-          const pyRes = await fetch(`${PYTHON_SERVER_URL}/api/search`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query })
-          });
+        // Retry loop: try up to MAX_RETRIES times
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+          try {
+            const pyRes = await fetch(`${PYTHON_SERVER_URL}/api/search`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ query })
+            });
 
-          if (pyRes.ok) {
-            const ytResults = await pyRes.json();
-            if (ytResults && ytResults.length > 0) return ytResults[0];
+            if (pyRes.ok) {
+              const ytResults = await pyRes.json();
+              if (ytResults && ytResults.length > 0) return ytResults[0];
+            } else if (attempt < MAX_RETRIES) {
+              // Exponential backoff: 1s, 2s, 4s
+              const delayMs = 1000 * Math.pow(2, attempt);
+              console.warn(`⚠️ Retrying track (attempt ${attempt + 1}/${MAX_RETRIES + 1}): ${query}`);
+              await new Promise(resolve => setTimeout(resolve, delayMs));
+              continue;
+            }
+          } catch (err) {
+            if (attempt < MAX_RETRIES) {
+              const delayMs = 1000 * Math.pow(2, attempt);
+              console.warn(`⚠️ Retrying track after error (attempt ${attempt + 1}/${MAX_RETRIES + 1}): ${query}`);
+              await new Promise(resolve => setTimeout(resolve, delayMs));
+              continue;
+            }
+            console.warn(`❌ Background Worker failed to convert after ${MAX_RETRIES + 1} attempts: ${query}`);
           }
-        } catch (err) {
-          console.warn(`⚠️ Background Worker failed to convert: ${query}`);
         }
         return {
           failed: true,
@@ -245,67 +294,78 @@ async function processBackgroundImport(playlistId, tracksToProcess, source) {
       const convertedTracks = batchResults.filter((item) => item && !item.failed);
       const failedTracks = batchResults.filter((item) => item && item.failed);
 
-      // Save each converted track to the global database
-      for (const t of convertedTracks) {
-        if (!t.id) continue;
-        
-        await YoutubeTrack.updateOne(
-          { videoId: t.id },
-          {
-            $set: {
-              title: t.title,
-              artist: t.artist,
-              thumbnail: t.thumbnail,
-              duration: t.duration,
-              webpage_url: t.webpage_url,
-              audio_url: t.audio_url,
-              proxy_url: t.proxy_url,
-              lastUsedAt: new Date()
-            },
-            $addToSet: { searchQueries: { $each: [t.title, t.artist] } }
-          },
-          { upsert: true }
-        );
+      // Batch-insert/upsert all converted tracks at once (instead of N updateOne calls)
+      if (convertedTracks.length > 0) {
+        const youtubeOpsForInsert = convertedTracks
+          .filter(t => t.id)
+          .map(t => ({
+            updateOne: {
+              filter: { videoId: t.id },
+              update: {
+                $set: {
+                  title: t.title,
+                  artist: t.artist,
+                  thumbnail: t.thumbnail,
+                  duration: t.duration,
+                  webpage_url: t.webpage_url,
+                  audio_url: t.audio_url,
+                  proxy_url: t.proxy_url,
+                  lastUsedAt: new Date()
+                },
+                $addToSet: { searchQueries: { $each: [t.title, t.artist] } }
+              },
+              upsert: true
+            }
+          }));
 
-        // Push the newly converted track into the Album instantly
-        await Album.updateOne(
-          { youtubePlaylistId: playlistId },
-          { 
-            $push: { 
-              tracks: {
-                videoId: t.id,
-                title: t.title,
-                duration: t.duration,
-                thumbnail: t.thumbnail,
-                status: 'ready'
-              } 
-            },
-            $set: { lastUpdated: new Date() }
-          }
-        );
+        if (youtubeOpsForInsert.length > 0) {
+          await YoutubeTrack.bulkWrite(youtubeOpsForInsert, { ordered: false });
+        }
+
+        // Batch-push all converted tracks to Album at once
+        const tracksToAdd = convertedTracks
+          .filter(t => t.id)
+          .map(t => ({
+            videoId: t.id,
+            title: t.title,
+            duration: t.duration,
+            thumbnail: t.thumbnail,
+            status: 'ready'
+          }));
+
+        if (tracksToAdd.length > 0) {
+          await Album.updateOne(
+            { youtubePlaylistId: playlistId },
+            { 
+              $push: { tracks: { $each: tracksToAdd } },
+              $set: { lastUpdated: new Date() }
+            }
+          );
+        }
       }
 
-      for (const failedTrack of failedTracks) {
+      // Batch-push all failed tracks at once
+      if (failedTracks.length > 0) {
+        const failedTracksToAdd = failedTracks.map(failedTrack => ({
+          videoId: `failed-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          title: failedTrack.title || 'Unknown title',
+          duration: 0,
+          thumbnail: null,
+          artist: failedTrack.artist || 'Unknown Artist',
+          status: 'failed',
+          failureReason: 'Track conversion failed'
+        }));
+
         await Album.updateOne(
           { youtubePlaylistId: playlistId },
           {
-            $push: {
-              tracks: {
-                videoId: `failed-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-                title: failedTrack.title || 'Unknown title',
-                duration: 0,
-                thumbnail: null,
-                artist: failedTrack.artist || 'Unknown Artist',
-                status: 'failed',
-                failureReason: 'Track conversion failed'
-              }
-            },
+            $push: { tracks: { $each: failedTracksToAdd } },
             $set: { lastUpdated: new Date() }
           }
         );
       }
       
-      console.log(`⏳ Progress: ${Math.min(i + 4, tracksToProcess.length)} / ${tracksToProcess.length} tracks imported into ${playlistId}`);
+      console.log(`⏳ Progress: ${Math.min(i + 8, tracksToProcess.length)} / ${tracksToProcess.length} tracks imported into ${playlistId}`);
     }
 
     // Mark the playlist as fully complete!
@@ -334,43 +394,58 @@ router.post('/import', async (req, res) => {
     let expectedTrackCount = 0;
     let importMessage = "";
 
-    // 1. QUICKLY GRAB METADATA
+    // 1. QUICKLY GRAB METADATA (WITH CACHING)
     if (source === 'spotify') {
-      const accessToken = await ensureSpotifyAccessToken();
-
       const rawId = extractSpotifyPlaylistId(url);
       if (!rawId) throw new Error("Invalid Spotify URL");
 
       playlistId = `spotify-${rawId}`;
-      try {
-        const spotifyApiData = await fetchSpotifyPlaylistFromApi(rawId, accessToken);
-        playlistName = spotifyApiData.playlistName;
-        rawTracks = spotifyApiData.tracks;
-
-        if (!rawTracks.length) {
-          throw new Error('Spotify playlist API returned no tracks.');
-        }
-
+      
+      // Check cache first
+      const cachedData = await getSpotifyPlaylistCache(rawId);
+      if (cachedData) {
+        playlistName = cachedData.playlistName;
+        rawTracks = cachedData.tracks;
         expectedTrackCount = rawTracks.length;
+        importMessage = `✨ Using cached metadata: ${rawTracks.length} tracks from Spotify.`;
+      } else {
+        const accessToken = await ensureSpotifyAccessToken();
+        
+        try {
+          const spotifyApiData = await fetchSpotifyPlaylistFromApi(rawId, accessToken);
+          playlistName = spotifyApiData.playlistName;
+          rawTracks = spotifyApiData.tracks;
 
-        importMessage = `Imported ${rawTracks.length} tracks from Spotify.`;
-      } catch (apiError) {
-        const playlistPageData = await parseSpotifyPlaylistPage(rawId);
-        playlistName = playlistPageData.playlistName;
+          if (!rawTracks.length) {
+            throw new Error('Spotify playlist API returned no tracks.');
+          }
 
-        if (!playlistPageData.trackIds.length) {
-          throw new Error('Spotify playlist page did not expose any track IDs.');
+          expectedTrackCount = rawTracks.length;
+          importMessage = `Imported ${rawTracks.length} tracks from Spotify.`;
+          
+          // Cache the metadata for faster future imports
+          await cacheSpotifyPlaylist(rawId, playlistName, spotifyApiData.trackIds, rawTracks);
+        } catch (apiError) {
+          const playlistPageData = await parseSpotifyPlaylistPage(rawId);
+          playlistName = playlistPageData.playlistName;
+
+          if (!playlistPageData.trackIds.length) {
+            throw new Error('Spotify playlist page did not expose any track IDs.');
+          }
+
+          rawTracks = await fetchSpotifyTracksFromPageFallback(playlistPageData.trackIds, accessToken);
+          if (!rawTracks.length) {
+            throw new Error('Failed to fetch any Spotify track metadata from the playlist page fallback.');
+          }
+
+          expectedTrackCount = rawTracks.length;
+
+          importMessage = `Spotify API was unavailable, so ${rawTracks.length} publicly visible tracks were imported from the playlist page.`;
+          console.warn('Spotify API playlist import fell back to page scraping:', apiError?.message || apiError);
+          
+          // Cache the fallback data as well
+          await cacheSpotifyPlaylist(rawId, playlistName, playlistPageData.trackIds, rawTracks);
         }
-
-        rawTracks = await fetchSpotifyTracksFromPageFallback(playlistPageData.trackIds, accessToken);
-        if (!rawTracks.length) {
-          throw new Error('Failed to fetch any Spotify track metadata from the playlist page fallback.');
-        }
-
-        expectedTrackCount = rawTracks.length;
-
-        importMessage = `Spotify API was unavailable, so ${rawTracks.length} publicly visible tracks were imported from the playlist page.`;
-        console.warn('Spotify API playlist import fell back to page scraping:', apiError?.message || apiError);
       }
 
     } else {
