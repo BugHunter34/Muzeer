@@ -12,6 +12,22 @@ const spotifyApi = new SpotifyWebApi({
 const SPOTIFY_MARKET = 'US';
 const SPOTIFY_FALLBACK_TRACK_LIMIT = 30;
 
+const normalizeSpotifyTrack = (track) => ({
+  id: track.id,
+  name: track.name,
+  artists: Array.isArray(track.artists)
+    ? track.artists.map((artist) => ({ name: artist?.name || 'Unknown Artist' }))
+    : [{ name: 'Unknown Artist' }],
+  external_urls: track.external_urls || {},
+  album: track.album
+    ? {
+        images: Array.isArray(track.album.images) ? track.album.images : []
+      }
+    : { images: [] },
+  duration_ms: track.duration_ms || 0,
+  url: track.external_urls?.spotify || `https://open.spotify.com/track/${track.id}`
+});
+
 const extractSpotifyPlaylistId = (input) => {
   if (!input || typeof input !== 'string') return null;
 
@@ -97,6 +113,41 @@ const parseSpotifyPlaylistPage = async (playlistId) => {
   return {
     playlistName,
     trackIds
+  };
+};
+
+const fetchSpotifyPlaylistFromApi = async (playlistId, accessToken) => {
+  const playlist = await fetchSpotifyJson(`/playlists/${playlistId}?market=${SPOTIFY_MARKET}`, accessToken);
+  const playlistName = playlist?.name?.trim() || 'Imported Spotify Playlist';
+  const tracks = [];
+  const seenTrackIds = new Set();
+  const limit = 100;
+  let offset = 0;
+
+  while (true) {
+    const page = await fetchSpotifyJson(
+      `/playlists/${playlistId}/tracks?market=${SPOTIFY_MARKET}&limit=${limit}&offset=${offset}`,
+      accessToken
+    );
+
+    const items = Array.isArray(page?.items) ? page.items : [];
+    for (const item of items) {
+      const track = item?.track;
+      if (!track?.id || seenTrackIds.has(track.id)) continue;
+      seenTrackIds.add(track.id);
+      tracks.push(normalizeSpotifyTrack(track));
+    }
+
+    if (items.length < limit) break;
+    offset += limit;
+
+    if (typeof page?.total === 'number' && offset >= page.total) break;
+  }
+
+  return {
+    playlistName,
+    trackIds: tracks.map((track) => track.id),
+    tracks
   };
 };
 
@@ -257,20 +308,33 @@ router.post('/import', async (req, res) => {
       const rawId = extractSpotifyPlaylistId(url);
       if (!rawId) throw new Error("Invalid Spotify URL");
 
-      const playlistPageData = await parseSpotifyPlaylistPage(rawId);
       playlistId = `spotify-${rawId}`;
-      playlistName = playlistPageData.playlistName;
+      try {
+        const spotifyApiData = await fetchSpotifyPlaylistFromApi(rawId, accessToken);
+        playlistName = spotifyApiData.playlistName;
+        rawTracks = spotifyApiData.tracks;
 
-      if (!playlistPageData.trackIds.length) {
-        throw new Error('Spotify playlist page did not expose any track IDs.');
+        if (!rawTracks.length) {
+          throw new Error('Spotify playlist API returned no tracks.');
+        }
+
+        importMessage = `Imported ${rawTracks.length} tracks from Spotify.`;
+      } catch (apiError) {
+        const playlistPageData = await parseSpotifyPlaylistPage(rawId);
+        playlistName = playlistPageData.playlistName;
+
+        if (!playlistPageData.trackIds.length) {
+          throw new Error('Spotify playlist page did not expose any track IDs.');
+        }
+
+        rawTracks = await fetchSpotifyTracksFromPageFallback(playlistPageData.trackIds, accessToken);
+        if (!rawTracks.length) {
+          throw new Error('Failed to fetch any Spotify track metadata from the playlist page fallback.');
+        }
+
+        importMessage = `Spotify API was unavailable, so ${rawTracks.length} publicly visible tracks were imported from the playlist page.`;
+        console.warn('Spotify API playlist import fell back to page scraping:', apiError?.message || apiError);
       }
-
-      rawTracks = await fetchSpotifyTracksFromPageFallback(playlistPageData.trackIds, accessToken);
-      if (!rawTracks.length) {
-        throw new Error('Failed to fetch any Spotify track metadata from the playlist page fallback.');
-      }
-
-      importMessage = `Spotify restricted direct playlist access. Importing ${rawTracks.length} publicly visible tracks from the playlist page.`;
 
     } else {
       // YouTube Logic (Requires a slight refactor to just get the track URLs quickly from Python)
@@ -289,17 +353,20 @@ router.post('/import', async (req, res) => {
       rawTracks = pyData.tracks;
     }
 
-    // 2. CREATE THE PLACEHOLDER PLAYLIST IN MONGODB
-    const existingPlaylist = await Album.findOne({ youtubePlaylistId: playlistId });
-    if (!existingPlaylist) {
-      await Album.create({
-        youtubePlaylistId: playlistId,
-        title: playlistName,
-        type: 'playlist',
-        status: 'processing', // Marks it as downloading!
-        tracks: [],
-      });
-    }
+    // 2. CREATE OR RESET THE PLACEHOLDER PLAYLIST IN MONGODB
+    await Album.updateOne(
+      { youtubePlaylistId: playlistId },
+      {
+        $set: {
+          title: playlistName,
+          type: 'playlist',
+          status: 'processing',
+          tracks: [],
+          lastUpdated: new Date()
+        }
+      },
+      { upsert: true }
+    );
 
     // 3. RESPOND TO THE FRONTEND INSTANTLY
     res.json({
@@ -330,9 +397,24 @@ router.get('/:id', async (req, res) => {
       videoId: { $in: playlist.tracks.map(t => t.videoId) } 
     });
 
+    const populatedTrackById = new Map(populatedTracks.map((track) => [track.videoId, track]));
+    const orderedTracks = playlist.tracks
+      .map((track) => populatedTrackById.get(track.videoId))
+      .filter(Boolean)
+      .map((track) => ({
+        id: track.videoId,
+        title: track.title,
+        artist: track.artist,
+        thumbnail: track.thumbnail,
+        duration: track.duration,
+        webpage_url: track.webpage_url,
+        audio_url: track.audio_url,
+        proxy_url: track.proxy_url
+      }));
+
     res.json({
       playlist: { id: playlist.youtubePlaylistId, name: playlist.title, status: playlist.status },
-      tracks: populatedTracks
+      tracks: orderedTracks
     });
   } catch (err) {
     res.status(500).json({ error: "Server error" });

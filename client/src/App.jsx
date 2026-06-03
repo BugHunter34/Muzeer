@@ -1,4 +1,4 @@
-﻿import { useState, useRef, useEffect } from 'react'
+﻿import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom';
 import './App.css'
 import './index.css'
@@ -224,6 +224,7 @@ function App() {
   const playbackSourceRef = useRef('queue')
   const playlistPlaybackTracksRef = useRef([])
   const playlistPlaybackIndexRef = useRef(0)
+  const playlistRefreshInFlightRef = useRef(new Set())
   const currentTrackRef = useRef(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [volume, setVolume] = useState(0.5)
@@ -1294,7 +1295,7 @@ useEffect(() => {
     (track?.webpage_url && currentTrack.webpage_url && track.webpage_url === currentTrack.webpage_url)
   )
 
-  const resolvePlaylistPreview = async (playlistId, tracks) => {
+  const resolvePlaylistPreview = useCallback(async (playlistId, tracks) => {
 
     const unresolved = tracks
       .filter((t) => !t.proxy_url && !t.audio_url && t.webpage_url)
@@ -1326,7 +1327,38 @@ useEffect(() => {
       } catch { /* silent ÔÇö preview resolution is best-effort */ }
       await new Promise((r) => setTimeout(r, 1000))
     }
-  }
+  }, [])
+
+  const refreshPlaylistFromServer = useCallback(async (playlistId, { updatePreview = true } = {}) => {
+    const response = await fetch(`${API_BASE_URL}/playlists/${playlistId}`, {
+      method: 'GET',
+      credentials: 'include'
+    })
+
+    if (!response.ok) {
+      throw new Error(`Refresh failed (${response.status})`)
+    }
+
+    const data = await response.json()
+
+    setPlaylists((prev) => prev.map((pl) => {
+      if (pl.id === playlistId) {
+        return {
+          ...pl,
+          name: data.playlist.name,
+          tracks: data.tracks,
+          status: data.playlist.status
+        }
+      }
+      return pl
+    }))
+
+    if (updatePreview && activePlaylistId === playlistId) {
+      resolvePlaylistPreview(playlistId, data.tracks)
+    }
+
+    return data
+  }, [activePlaylistId, resolvePlaylistPreview])
 
   const normalizeImportedTrack = (track) => {
     const webpageUrl = track?.webpage_url || track?.url || track?.link || null
@@ -1378,18 +1410,35 @@ const handleImportPlaylist = async () => {
       const importedName = data.playlist.name || `${importSource} import`;
 
       // 2. Add the playlist placeholder to the UI immediately
-      setPlaylists((prev) => [...prev, {
-        id: importedId,
-        name: importedName,
-        status: data.playlist.status || 'processing', // This triggers the spinning icon
-        tracks: [] // Starts empty, fills up when the user clicks refresh!
-      }])
+      setPlaylists((prev) => {
+        const placeholder = {
+          id: importedId,
+          name: importedName,
+          status: data.playlist.status || 'processing',
+          tracks: []
+        }
+
+        const existingIndex = prev.findIndex((playlist) => playlist.id === importedId)
+        if (existingIndex >= 0) {
+          const next = [...prev]
+          next[existingIndex] = {
+            ...next[existingIndex],
+            ...placeholder,
+            tracks: next[existingIndex].tracks || []
+          }
+          return next
+        }
+
+        return [...prev, placeholder]
+      })
 
       // 3. Switch the UI to show the new (currently empty) playlist
       setActivePlaylistId(importedId)
       setRightPanelMode('playlist')
       setImportUrl('')
       setImportStatus(data.message || `Started importing "${importedName}".`)
+
+      refreshPlaylistFromServer(importedId, { updatePreview: true }).catch(() => {})
 
     } catch (err) {
       setImportError(err?.message || 'Playlist import failed.')
@@ -1401,39 +1450,44 @@ const handleImportPlaylist = async () => {
 
   const handleRefreshPlaylist = async (playlistId) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/playlists/${playlistId}`, {
-        method: 'GET',
-        credentials: 'include'
-      });
-
-      if (!response.ok) {
-        throw new Error(`Refresh failed (${response.status})`);
-      }
-
-      const data = await response.json();
-
-      // Update the specific playlist in React state with the fresh database tracks
-      setPlaylists((prev) => prev.map((pl) => {
-        if (pl.id === playlistId) {
-          return {
-            ...pl,
-            name: data.playlist.name,
-            tracks: data.tracks,
-            status: data.playlist.status // Will be 'processing' or 'ready'
-          };
-        }
-        return pl;
-      }));
-
-      // If the currently viewed playlist is the one being refreshed, update the view preview too
-      if (activePlaylistId === playlistId) {
-        resolvePlaylistPreview(playlistId, data.tracks);
-      }
-
+      await refreshPlaylistFromServer(playlistId, { updatePreview: true })
     } catch (err) {
       console.error("Failed to refresh playlist:", err);
     }
   };
+
+  useEffect(() => {
+    const processingPlaylists = playlists.filter((playlist) => playlist?.status === 'processing')
+    if (!processingPlaylists.length) return
+
+    let cancelled = false
+
+    const pollProcessingPlaylists = async () => {
+      for (const playlist of processingPlaylists) {
+        if (cancelled) return
+        if (playlistRefreshInFlightRef.current.has(playlist.id)) continue
+
+        playlistRefreshInFlightRef.current.add(playlist.id)
+        try {
+          await refreshPlaylistFromServer(playlist.id, {
+            updatePreview: playlist.id === activePlaylistId
+          })
+        } catch {
+          // keep polling; background imports are eventually consistent
+        } finally {
+          playlistRefreshInFlightRef.current.delete(playlist.id)
+        }
+      }
+    }
+
+    pollProcessingPlaylists()
+    const interval = setInterval(pollProcessingPlaylists, 4000)
+
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [playlists, activePlaylistId, refreshPlaylistFromServer])
 
   const removePlaylist = (playlistId) => {
     if (playlists.length <= 1) return
